@@ -119,16 +119,9 @@ def antigravity():
         status = data.get('userStatus') or {}
         plan = status.get('planStatus') or {}
         info = plan.get('planInfo') or {}
-        for kind in ('Prompt', 'Flow'):
-            total = info.get('monthly' + kind + 'Credits')
-            left = plan.get('available' + kind + 'Credits')
-            if total is not None and left is not None and float(total) > 0:
-                windows.append({'key': kind.lower() + '_credits', 'label': kind + ' credits',
-                    'used_percent': max(0, min(100, 100 * (1 - float(left) / float(total)))),
-                    'resets_at': None, 'note': f'{left} / {total} 크레딧 남음'})
         return {'status': 'ok' if windows else 'no_data', 'windows': windows,
             'plan': info.get('planName'),
-            'message': '한도·크레딧은 앱 조회값입니다. 앱에서 토큰 수를 제공하지 않는 대화의 토큰 사용량은 집계할 수 없습니다' if windows else '앱 응답에 모델 한도 정보가 없습니다'}
+            'message': '모델별 한도는 앱 조회값입니다. 앱에서 토큰 수를 제공하지 않는 대화의 토큰 사용량은 집계할 수 없습니다' if windows else '앱 응답에 모델 한도 정보가 없습니다'}
     return {'status': 'no_data', 'message': 'Antigravity를 실행하면 모델별 한도를 조회합니다. 토큰 사용량은 앱 로그에 제공될 때만 집계합니다'}
 
 
