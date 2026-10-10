@@ -72,25 +72,25 @@ def _refresh_claude(cred_file, db):
     return oauth, None
 
 CLAUDE_LABELS = {
-    "five_hour": ("5시간", 1),
-    "seven_day": ("주간", 2),
-    "seven_day_opus": ("주간 Opus", 3),
-    "seven_day_sonnet": ("주간 Sonnet", 4),
-    "seven_day_oauth_apps": ("주간 앱", 5),
+    "five_hour": ("5h", 1),
+    "seven_day": ("Weekly", 2),
+    "seven_day_opus": ("Weekly Opus", 3),
+    "seven_day_sonnet": ("Weekly Sonnet", 4),
+    "seven_day_oauth_apps": ("Weekly Apps", 5),
 }
 
 
 def _window_label(minutes):
     if not minutes:
-        return "한도"
+        return "Limit"
     m = int(minutes)
     if 280 <= m <= 320:
-        return "5시간"
+        return "5h"
     if 9900 <= m <= 10200:
-        return "주간"
+        return "Weekly"
     if m % 1440 == 0:
-        return f"{m // 1440}일"
-    return f"{round(m / 60)}시간"
+        return f"{m // 1440}d"
+    return f"{round(m / 60)}h"
 
 
 def fetch_claude(db, force=False):
@@ -109,7 +109,7 @@ def fetch_claude(db, force=False):
     keychain = None if cred_file else paths.claude_keychain_oauth()
     if not cred_file and keychain is None:
         result.update(status="no_credentials",
-                      message="Claude Code 로그인 정보(.credentials.json)를 찾지 못했어요")
+                      message="Claude Code login credentials were not found")
         db.set_kv("claude_limits", result)
         return result
     if keychain is not None:
@@ -137,10 +137,10 @@ def fetch_claude(db, force=False):
             token, exp = new["accessToken"], new.get("expiresAt")
         refresh_note = err
     if not token:
-        result.update(status="no_credentials", message="OAuth 토큰이 없어요 (API 키 로그인?)")
+        result.update(status="no_credentials", message="No OAuth token (API key login?)")
     elif exp and exp / 1000 < now:
-        msg = {"relogin": "로그인이 풀렸어요. Claude Code에서 /login 을 한 번 해 주세요",
-               "offline": "토큰 갱신 실패 (인터넷 연결 확인)"}.get(refresh_note, "로그인 토큰 만료. Claude Code를 한 번 실행하면 갱신돼요")
+        msg = {"relogin": "Sign in again with /login in Claude Code",
+               "offline": "Token refresh failed (check your connection)"}.get(refresh_note, "Login expired. Run Claude Code to refresh it.")
         result.update(status="expired", message=msg)
     else:
         req = urllib.request.Request(CLAUDE_URL, headers={
@@ -169,13 +169,13 @@ def fetch_claude(db, force=False):
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 result.update(status="rate_limited", backoff_until=now + 900,
-                              message="조회가 너무 잦아 잠시 쉬는 중 (마지막 값 표시)")
+                              message="Rate limited (showing cached values)")
             elif e.code in (401, 403):
-                result.update(status="auth", message="인증 실패 — Claude Code 재로그인 필요")
+                result.update(status="auth", message="Authentication failed. Sign in to Claude Code again.")
             else:
                 result.update(status="error", message=f"HTTP {e.code}")
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
-            result.update(status="offline", message=f"연결 실패: {getattr(e, 'reason', e)}")
+            result.update(status="offline", message=f"Connection failed: {getattr(e, 'reason', e)}")
     db.set_kv("claude_limits", result)
     return result
 
@@ -195,9 +195,9 @@ def _codex_one(snap, now):
             "key": w["key"], "label": _window_label(w.get("window_minutes")),
             "used_percent": 0.0 if stale else w["used_percent"],
             "resets_at": None if stale else reset,
-            "note": "리셋됨" if stale else "",
+            "note": "Reset" if stale else "",
         })
-    order = {"5시간": 0, "주간": 1}
+    order = {"5h": 0, "Weekly": 1}
     out["windows"].sort(key=lambda w: order.get(w["label"], 5))
     return out
 
@@ -206,7 +206,7 @@ def codex_limits(db):
     snaps = list((db.get_kv("codex_limits_by_account") or {}).values())
     out = {"source": "codex", "windows": [], "accounts": [], "status": "ok", "message": ""}
     if not snaps:
-        out.update(status="no_data", message="Codex 로그에 한도 정보가 아직 없어요")
+        out.update(status="no_data", message="No quota information in Codex logs yet")
         return out
     now = time.time()
     if any(s.get("account") for s in snaps):
@@ -255,7 +255,7 @@ def codex_limits(db):
     age = now - (accts[0]["fetched_at"] or now)
     if age > 3600:
         h = int(age // 3600)
-        out["message"] = f"마지막 Codex 사용 기준 ({h}시간 전)" if h < 48 else f"마지막 Codex 사용 기준 ({h // 24}일 전)"
+        out["message"] = f"Last Codex usage ({h}h ago)" if h < 48 else f"Last Codex usage ({h // 24}d ago)"
     return out
 
 
@@ -275,8 +275,8 @@ def all_limits(db, force=False):
                 out[source] = providers[source]()
             else:
                 out[source] = {'source': source, 'windows': [], 'status': 'unsupported',
-                    'message': '웹 대화의 토큰 사용량·모델별 잔여 한도는 자동 조회할 수 없습니다. CLI 사용량과 별개입니다'}
+                    'message': 'Web token usage and model quotas cannot be fetched automatically. CLI usage is separate.'}
         except Exception:
             out[source] = {'source': source, 'windows': [], 'status': 'error',
-                           'message': '이 도구의 한도 조회에 실패했습니다'}
+                           'message': 'Could not fetch limits for this app'}
     return out

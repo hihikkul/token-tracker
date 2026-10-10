@@ -17,7 +17,7 @@ import tkinter.font as tkfont
 import webbrowser
 
 from . import icon, paths, updater
-from .sources import NAMES, enabled
+from .sources import NAMES, enabled, connected
 
 C = {
     "bg": "#141416", "edge": "#2e2e33", "ink": "#f4f4f5", "ink2": "#a1a1aa", "muted": "#6b6b73",
@@ -50,16 +50,15 @@ GAUGE = 18   # ring size in the bar
 def pick_fonts(root, wanted, wanted_num):
     """User font if installed, else Segoe UI Variable (Windows 11), else Segoe UI, else Tk's default."""
     fams = set(tkfont.families(root))
-    legacy = {"", "Calibri"}  # older configs stored Calibri as the default
 
     def first(*names):
         for n in names:
             if n and n in fams:
                 return n
         return tkfont.nametofont("TkDefaultFont").actual("family")
-    text = first(None if wanted in legacy else wanted, "Segoe UI Variable Text", "Segoe UI",
+    text = first(wanted, "Segoe UI Variable Text", "Segoe UI",
                  "SF Pro Text", "Helvetica Neue")
-    num = first(None if wanted_num in legacy else wanted_num, "Segoe UI Variable Display",
+    num = first(wanted_num, "Segoe UI Variable Display",
                 "Segoe UI Variable Text", "Segoe UI", "SF Pro Display", "SF Pro Text", "Helvetica Neue")
     return text, num
 
@@ -112,6 +111,21 @@ def num_color(used):
 def rgb(hex_color):
     h = hex_color.lstrip("#")
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def tooltip_geometry(anchor, size, bounds):
+    """Prefer above; fit below when needed, or use the larger side with scrolling."""
+    rx, ry, rw, rh = anchor
+    tw, th = size
+    left, top, right, bottom = bounds
+    gap = 8
+    above, below = max(0, ry - top - gap), max(0, bottom - ry - rh - gap)
+    up = th <= above or (th > below and above >= below)
+    height = min(th, max(1, above if up else below))
+    width = min(tw, right - left)
+    x = max(left, min(rx + rw - width, right - width))
+    y = ry - height - gap if up else ry + rh + gap
+    return x, max(top, min(y, bottom - height)), width, height
 
 
 # ---------------------------------------------------------------- Windows chrome
@@ -203,6 +217,25 @@ class Win:
             root.after(10, root.deiconify)
         except (AttributeError, OSError):
             pass
+
+    @classmethod
+    def work_area(cls, root):
+        if cls.ok:
+            import ctypes
+            from ctypes import wintypes
+            class MonitorInfo(ctypes.Structure):
+                _fields_ = [('size', wintypes.DWORD), ('monitor', wintypes.RECT),
+                            ('work', wintypes.RECT), ('flags', wintypes.DWORD)]
+            user = ctypes.windll.user32
+            user.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+            user.MonitorFromWindow.restype = wintypes.HANDLE
+            user.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MonitorInfo)]
+            info = MonitorInfo()
+            info.size = ctypes.sizeof(info)
+            if user.GetMonitorInfoW(user.MonitorFromWindow(cls.hwnd(root), 2), ctypes.byref(info)):
+                r = info.work
+                return r.left, r.top, r.right, r.bottom
+        return (0, 0, root.winfo_screenwidth(), root.winfo_screenheight())
 
     @classmethod
     def minimize(cls, root):
@@ -520,7 +553,7 @@ class Widget:
         self._bind_drag(strut)
         first = True
         for src in NAMES:
-            if src not in self.show:
+            if src not in self.show or not connected(limits.get(src) or {}):
                 continue
             if not first:
                 sep = tk.Frame(self.bar, bg=C["edge"], width=1, height=16)
@@ -563,6 +596,10 @@ class Widget:
         px, py = self.root.winfo_pointerxy()
         x, y = self.root.winfo_rootx(), self.root.winfo_rooty()
         if not (x <= px < x + self.root.winfo_width() and y <= py < y + self.root.winfo_height()):
+            if self.tip is not None:
+                tx, ty = self.tip.winfo_rootx(), self.tip.winfo_rooty()
+                if tx <= px < tx + self.tip.winfo_width() and ty <= py < ty + self.tip.winfo_height():
+                    return
             self._hide_tip()
 
     def _hide_tip(self):
@@ -582,6 +619,7 @@ class Widget:
         t.attributes("-topmost", True)
         t.configure(bg=C["tip"])
         self.tip = t
+        t.bind('<Leave>', self._hover_out)
         self._fill_tip()
         Win.round_corners(t, C["edge"], small=True)
 
@@ -591,8 +629,12 @@ class Widget:
             w.destroy()
         box = tk.Frame(t, bg=C["tip"], highlightthickness=1, highlightbackground=C["edge"])
         box.pack(fill="both", expand=True)
-        inner = tk.Frame(box, bg=C["tip"])
-        inner.pack(fill="both", expand=True, padx=14, pady=(10, 10))
+        canvas = tk.Canvas(box, bg=C['tip'], highlightthickness=0)
+        canvas.pack(side='left', fill='both', expand=True)
+        scroll = tk.Scrollbar(box, orient='vertical', command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        inner = tk.Frame(canvas, bg=C['tip'])
+        canvas.create_window((14, 10), window=inner, anchor='nw')
         tk.Frame(inner, bg=C["tip"], width=270, height=0).pack()
         limits = self.engine.snapshot.get("limits") or {}
 
@@ -603,7 +645,7 @@ class Widget:
 
         first = True
         for src in NAMES:
-            if src not in self.show:
+            if src not in self.show or not connected(limits.get(src) or {}):
                 continue
             lim = limits.get(src) or {}
             for plan, wins, fetched in self._accounts(lim) or [(None, [], None)]:
@@ -617,14 +659,14 @@ class Widget:
                 if plan:
                     tk.Label(head, text=plan, bg=C["pill"], fg=C["ink2"], font=(FONT, 8), padx=6).pack(side="left", padx=(8, 0))
                 if not wins:
-                    lab(inner, lim.get('message') or STATUS.get(lim.get("status"), "No data yet"), C["muted"], 9, anchor="w")
+                    lab(inner, STATUS.get(lim.get("status"), "No data yet"), C["muted"], 9, anchor="w")
                     continue
                 for w in wins:
                     used = float(w["used_percent"])
                     row = tk.Frame(inner, bg=C["tip"])
                     row.pack(fill="x", pady=(3, 0))
                     tk.Label(row, text=wlabel(w["label"]), bg=C["tip"], fg=C["ink2"], font=(FONT, 9),
-                             width=11, anchor="w").pack(side="left")
+                             anchor="w").pack(side="left", padx=(0, 10))
                     note = reset_in(w["resets_at"]) if w.get("resets_at") else ("Reset" if w.get("note") else "")
                     lab(row, note, C["muted"], 9, side="left")
                     lab(row, f"{100 - used:.0f}%", num_color(used), 10, True, font=NUM_FONT, side="right")
@@ -638,12 +680,17 @@ class Widget:
         lab(inner, f"As of {clock(upd)}" if upd else "Loading…", C["muted"], 8, anchor="w", pady=(10, 0))
 
         t.update_idletasks()
-        tw, th = t.winfo_reqwidth(), t.winfo_reqheight()
+        tw, th = inner.winfo_reqwidth() + 44, inner.winfo_reqheight() + 20
         rx, ry = self.root.winfo_rootx(), self.root.winfo_rooty()
-        sw = self.root.winfo_screenwidth()
-        x = max(0, min(rx + self.root.winfo_width() - tw, sw - tw))
-        y = ry - th - 8 if ry - th - 8 >= 0 else ry + self.root.winfo_height() + 8  # above the bar if it fits
-        t.geometry(f"+{x}+{y}")
+        x, y, width, height = tooltip_geometry(
+            (rx, ry, self.root.winfo_width(), self.root.winfo_height()), (tw, th), Win.work_area(self.root))
+        if height < th:
+            scroll.pack(side='right', fill='y')
+        canvas.configure(scrollregion=(0, 0, tw, th))
+        canvas.bind('<MouseWheel>', lambda event: canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units'))
+        for child in inner.winfo_children():
+            child.bind('<MouseWheel>', lambda event: canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units'))
+        t.geometry(f"{width}x{height}{x:+d}{y:+d}")
 
     # ------------------------------------------------------- taskbar button
     def _taskbar_status(self, limits):

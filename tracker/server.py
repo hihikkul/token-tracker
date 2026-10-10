@@ -104,7 +104,7 @@ def make_handler(engine):
                     return self._send(200, {'current': updater.local_version(), 'latest': latest,
                         'mode': mode, 'url': 'https://github.com/hihikkul/token-tracker/releases/latest'})
                 except Exception:
-                    return self._send(503, {'error': '업데이트 확인 실패. 인터넷 연결을 확인해주세요'})
+                    return self._send(503, {'error': 'Update check failed. Check your internet connection.'})
             if path.startswith("/api/ranking/"):
                 b = self._body()
                 nick = str(b.get("nick") or "").strip()[:24]

@@ -17,6 +17,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from datetime import date, datetime, timedelta
 
 from . import paths
@@ -128,13 +129,18 @@ class RankingError(Exception):
 
 def server_url(cfg=None):
     cfg = cfg or paths.load_config()
-    return ((cfg.get("ranking") or {}).get("server") or DEFAULT_SERVER).rstrip("/")
+    settings = cfg.get('ranking') or {}
+    url = (settings.get('server') or DEFAULT_SERVER).rstrip('/')
+    host = urlparse(url).hostname
+    if host in ('localhost', '127.0.0.1', '::1') and not settings.get('allow_local_server'):
+        return DEFAULT_SERVER
+    return url
 
 
 def _call(method, path, body=None, token=None, cfg=None):
     base = server_url(cfg)
     if not base:
-        raise RankingError("랭킹 서버가 아직 설정되지 않았어요")
+        raise RankingError("No ranking server configured")
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(base + path, data=data, method=method,
                                  headers={"Content-Type": "application/json", "User-Agent": "token-tracker",
@@ -147,16 +153,18 @@ def _call(method, path, body=None, token=None, cfg=None):
             msg = json.loads(e.read().decode("utf-8")).get("error")
         except (ValueError, OSError):
             msg = None
-        raise RankingError({"group not found": "그런 초대 코드가 없어요", "group is full": "그룹이 가득 찼어요 (최대 50명)",
-                            "bad token": "그룹에서 나가졌어요. 다시 참가해 주세요"}.get(msg, msg or f"서버 오류 {e.code}"))
+        raise RankingError({"group not found": "Invite code not found", "group is full": "Group is full (50 members maximum)",
+                            "bad token": "Membership expired. Join the group again."}.get(msg, msg or f"Server error {e.code}"))
     except (urllib.error.URLError, TimeoutError, OSError):
-        raise RankingError("랭킹 서버에 연결할 수 없어요")
+        raise RankingError("Could not connect to the public ranking server. Update Token Tracker and check your connection.")
 
 
 def state(cfg=None):
     cfg = cfg or paths.load_config()
     r = cfg.get("ranking") or {}
-    return {"server": bool(server_url(cfg)), "joined": bool(r.get("code") and r.get("token")),
+    return {"server": bool(server_url(cfg)), 'server_url': server_url(cfg),
+            'invite_url': server_url(cfg) + '/?invite=' + str(r.get('code') or ''),
+            "joined": bool(r.get("code") and r.get("token")),
             "code": r.get("code"), "group_name": r.get("group_name"), "nick": r.get("nick") or ""}
 
 
@@ -222,7 +230,7 @@ def ranking(db, limits, period):
     cfg = paths.load_config()
     r = cfg.get("ranking") or {}
     if not (r.get("code") and r.get("token")):
-        raise RankingError("아직 그룹에 참가하지 않았어요")
+        raise RankingError("You have not joined a group yet")
     try:
         sync(db, limits, force=time.time() - _last_sync["t"] > 120)
     except RankingError:
@@ -235,4 +243,4 @@ def ranking(db, limits, period):
 
 
 def random_nick():
-    return "쌀숭이-" + secrets.token_hex(2)
+    return "User-" + secrets.token_hex(2)

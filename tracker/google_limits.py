@@ -34,9 +34,9 @@ def quota_windows(data):
             quota = value.get('quotaInfo') or value
             fraction = quota.get('remainingFraction')
             if isinstance(fraction, (int, float)) and not isinstance(fraction, bool) and 0 <= fraction <= 1:
-                model = value.get('modelId') or value.get('label') or value.get('modelOrAlias') or '모델 한도'
+                model = value.get('modelId') or value.get('label') or value.get('modelOrAlias') or 'Model quota'
                 if isinstance(model, dict):
-                    model = model.get('model') or model.get('modelAlias') or '모델 한도'
+                    model = model.get('model') or model.get('modelAlias') or 'Model quota'
                 kind = value.get('tokenType') or ''
                 key = f'{model}:{kind}'
                 found[key] = {'key': key, 'label': str(model) + (' ' + kind if kind else ''),
@@ -54,11 +54,11 @@ def quota_windows(data):
 def gemini_cli():
     credential = paths.gemini_root() / 'oauth_creds.json'
     if not credential.exists():
-        return {'status': 'no_credentials', 'message': 'Gemini CLI에서 Google 로그인을 해주세요'}
+        return {'status': 'no_credentials', 'message': 'Sign in with Google in Gemini CLI'}
     oauth = json.loads(credential.read_text(encoding='utf-8'))
     token = oauth.get('access_token')
     if not token or (oauth.get('expiry_date') and oauth['expiry_date'] / 1000 < time.time()):
-        return {'status': 'expired', 'message': 'Gemini CLI를 실행해 로그인 토큰을 갱신해주세요'}
+        return {'status': 'expired', 'message': 'Run Gemini CLI to refresh your login'}
     headers = {'Authorization': 'Bearer ' + token}
     endpoint = 'https://cloudcode-pa.googleapis.com/v1internal:'
     loaded = _post(endpoint + 'loadCodeAssist', {'metadata': {'ideType': 'IDE_UNSPECIFIED'}}, headers)
@@ -71,7 +71,7 @@ def gemini_cli():
     tier = loaded.get('currentTier') or {}
     return {'status': 'ok' if windows else 'no_data', 'windows': windows,
             'plan': tier.get('name') or tier.get('id'),
-            'message': '' if windows else '서버 응답에 한도 정보가 없습니다'}
+            'message': '' if windows else 'No quota information in the server response'}
 
 
 def _local_servers():
@@ -121,8 +121,8 @@ def antigravity():
         info = plan.get('planInfo') or {}
         return {'status': 'ok' if windows else 'no_data', 'windows': windows,
             'plan': info.get('planName'),
-            'message': '모델별 한도는 앱 조회값입니다. 앱에서 토큰 수를 제공하지 않는 대화의 토큰 사용량은 집계할 수 없습니다' if windows else '앱 응답에 모델 한도 정보가 없습니다'}
-    return {'status': 'no_data', 'message': 'Antigravity를 실행하면 모델별 한도를 조회합니다. 토큰 사용량은 앱 로그에 제공될 때만 집계합니다'}
+            'message': 'Model limits are reported by the app. Token usage is available only when the app records token counts.' if windows else 'No model quotas in the app response'}
+    return {'status': 'no_data', 'message': 'Start Antigravity to read model quotas. Usage requires token counts in app logs.'}
 
 
 def fetch(db, source, force=False):
@@ -137,6 +137,6 @@ def fetch(db, source, force=False):
         if result.get('status') == 'ok':
             result['fetched_at'] = now
     except Exception:
-        result.update(status='offline', message='한도 조회 실패. 앱 로그인·실행 상태를 확인해주세요')
+        result.update(status='offline', message='Could not fetch quotas. Check app login and running status.')
     db.set_kv(source + '_limits', result)
     return result

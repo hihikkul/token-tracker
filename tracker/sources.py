@@ -1,8 +1,16 @@
 """Independent product selection; unavailable counters never mean zero usage."""
 NAMES = {
     'claude': 'Claude Code', 'codex': 'Codex', 'chatgpt': 'ChatGPT',
-    'gemini': 'Gemini CLI', 'antigravity': 'Antigravity', 'gemini_web': 'Gemini 웹',
+    'gemini': 'Gemini CLI', 'antigravity': 'Antigravity', 'gemini_web': 'Gemini Web',
 }
+
+
+def connected(limit):
+    """A usable quota snapshot; cached windows remain useful during an outage."""
+    if limit.get('status') in ('no_credentials', 'expired', 'auth', 'unsupported', 'no_data'):
+        return False
+    return bool(limit.get('windows') or any(account.get('windows')
+                for account in limit.get('accounts', [])))
 
 
 def enabled(cfg=None):

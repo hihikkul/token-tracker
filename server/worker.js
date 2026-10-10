@@ -20,6 +20,20 @@ const json = (data, status = 200) =>
   });
 const err = (status, message) => json({ error: message }, status);
 
+function invitePage(url) {
+  const value = (url.searchParams.get('invite') || '').toUpperCase();
+  const code = /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(value) ? value : '';
+  return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Token Tracker Invitation</title><style>body{font:18px Calibri,Arial,sans-serif;background:#141416;color:#f4f4f5;margin:0;padding:8vh 24px}main{max-width:650px;margin:auto}a{color:#82b6ff}code{font-size:26px}li{margin:18px 0}p{line-height:1.5;color:#bbb}button{padding:10px 18px;cursor:pointer}</style>
+    <main><h1>Token Tracker Ranking</h1><p>The shared ranking server is online on Cloudflare. Each person's usage dashboard runs privately on their own PC.</p>
+    ${code ? `<h2>Your invite code</h2><code id="code">${code}</code> <button id="copy">Copy code</button>` : '<p>Ask your friend for a group invite code.</p>'}
+    <ol><li>Download Token Tracker: <a href="https://github.com/hihikkul/token-tracker/archive/refs/heads/main.zip">Windows ZIP</a> or <a href="https://github.com/hihikkul/token-tracker/releases/latest">Mac DMG</a>. Windows needs Python 3.10 or later; extract the ZIP and run install.bat. Mac: open the DMG and copy the app to Applications.</li>
+    <li>Start Token Tracker on <strong>your own PC</strong>, then open its dashboard.</li><li>Open <strong>Ranking → Join with invite code</strong> and enter ${code ? `<code>${code}</code>` : 'your invite code'} and a nickname.</li></ol>
+    <p>A localhost or 127.0.0.1 link opens the dashboard on your own computer. It cannot open your friend's dashboard. If that address will not load, start Token Tracker first. If joining fails, update the app and check your internet connection.</p>
+    </main><script>const button=document.getElementById('copy');if(button)button.onclick=async()=>{try{await navigator.clipboard.writeText(document.getElementById('code').textContent);button.textContent='Copied'}catch{button.textContent='Select and copy the code above'}};</script></html>`,
+    {headers: {'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store'}});
+}
+
 function randomString(n, alphabet) {
   const bytes = crypto.getRandomValues(new Uint8Array(n));
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
@@ -74,6 +88,7 @@ export default {
     const url = new URL(req.url);
     const parts = url.pathname.split('/').filter(Boolean); // v1 groups :code action
     if (parts[0] !== 'v1') {
+      if (url.pathname === '/' && req.method === 'GET' && (req.headers.get('accept') || '').includes('text/html')) return invitePage(url);
       return url.pathname === '/' ? json({ ok: true, service: 'token-tracker-rank' }) : err(404, 'not found');
     }
 
