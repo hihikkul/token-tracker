@@ -344,8 +344,6 @@ class Widget:
                     activeforeground=C["ink"], disabledforeground=C["muted"], bd=0, relief="flat",
                     font=(FONT, 9))
         m.add_command(label="Open Dashboard", command=self.open_dashboard)
-        if self.cfg.get("artifact_url"):
-            m.add_command(label="Open Artifact Dashboard", command=lambda: webbrowser.open(self.cfg["artifact_url"]))
         m.add_command(label="Refresh Now", command=self.refresh)
         m.add_command(label="Check for Updates", command=lambda: self._update(manual=True))
         if self.taskbar:
@@ -354,7 +352,7 @@ class Widget:
         m.add_checkbutton(label="Always on Top", variable=self._top, command=self.toggle_topmost,
                           selectcolor=C["ink"])
         m.add_separator()
-        m.add_command(label="Open Settings Folder", command=lambda: webbrowser.open(paths.data_dir().as_uri()))
+        m.add_command(label="Settings", command=lambda: webbrowser.open(self.url.rstrip('/') + '/#v=settings'))
         m.add_command(label="Quit", command=self.quit)
         m.add_separator()
         m.add_command(label=f"token-tracker v{updater.local_version()}", state="disabled")
@@ -521,7 +519,19 @@ class Widget:
     # ------------------------------------------------------------------ draw
     def _tick(self):
         snap = self.engine.snapshot
-        selected = tuple(enabled())
+        cfg = paths.load_config()
+        old, new = self.cfg.get('widget', {}), cfg.get('widget', {})
+        if any(old.get(key) != new.get(key) for key in ('font', 'number_font', 'topmost', 'opacity')):
+            global FONT, NUM_FONT
+            FONT, NUM_FONT = pick_fonts(self.root, new.get('font'), new.get('number_font'))
+            self.menu.configure(font=(FONT, 9))
+            self.status.configure(font=(FONT, 9))
+            self.root.attributes('-topmost', bool(new.get('topmost', True)))
+            self._top.set(bool(new.get('topmost', True)))
+            self.root.attributes('-alpha', float(new.get('opacity', .96)))
+            self._last_draw = -1
+        self.cfg = cfg
+        selected = tuple(enabled(cfg))
         if selected != self._source_selection:
             self._source_selection = selected
             self.show = list(selected)
@@ -567,7 +577,7 @@ class Widget:
             else:
                 ring = self._ring((100 - used) / 100, ring_color(src, used))
             parts = [tk.Label(self.bar, image=ring, bg=C["bg"]),
-                     tk.Label(self.bar, text=SHORT[src] + (' ' + wlabel(w['label']) if w else ''), bg=C["bg"], fg=C["ink2"], font=(FONT, 10)),
+                     tk.Label(self.bar, text=SHORT[src], bg=C["bg"], fg=C["ink2"], font=(FONT, 10)),
                      tk.Label(self.bar, text="—" if used is None else f"{100 - used:.0f}%", bg=C["bg"],
                               fg=C["muted"] if used is None else num_color(used), font=(NUM_FONT, 11, "bold"))]
             parts[0].pack(side="left", pady=(0, 0))
@@ -694,8 +704,8 @@ class Widget:
 
     # ------------------------------------------------------- taskbar button
     def _taskbar_status(self, limits):
-        """Title lists each tool's 5h remaining; the icon shows the lowest one as a gauge."""
-        parts, worst = [], None
+        """Show the most available tool, after each tool's restrictive quota is applied."""
+        parts, best = [], None
         for src in NAMES:
             if src not in self.show or not connected(limits.get(src) or {}):
                 continue
@@ -703,13 +713,13 @@ class Widget:
             if not w:
                 continue
             used = float(w["used_percent"])
-            parts.append(f"{SHORT[src]} {wlabel(w['label'])} {max(0, 100 - used):.0f}%")
-            if worst is None or used > worst[0]:
-                worst = (used, src)
+            parts.append(f"{SHORT[src]} {max(0, 100 - used):.0f}%")
+            if best is None or used < best[0]:
+                best = (used, src)
         self.root.title('Token Tracker · ' + ' · '.join(parts) if parts else 'Token Tracker')
         if not self.live_icon:
             return
-        key = None if worst is None else (max(0, round(100 - worst[0])), worst[1])
+        key = None if best is None else (max(0, round(100 - best[0])), best[1])
         if key == self._icon_key:
             return
         self._icon_key = key

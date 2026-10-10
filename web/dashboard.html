@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Tracker</title>
+<title>토큰 트래커</title>
 <meta name="theme-color" content="#f6f6f4">
 <link rel="icon" type="image/png" href="/favicon.png">
 <style>
@@ -75,7 +75,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .lw .track i { display: block; height: 100%; border-radius: 3px; transition: width .4s cubic-bezier(.16, 1, .3, 1); }
 .lim .msg { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
 
-/* Subscription value */
+/* 쌀먹 비율 */
 .ratio { display: flex; flex-wrap: wrap; gap: 32px; padding: 22px 24px; }
 .ratio[hidden], .rank-view[hidden] { display: none; }
 .ratio-l { flex: 1 1 260px; display: flex; flex-direction: column; gap: 8px; }
@@ -117,7 +117,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .btn svg { width: 15px; height: 15px; }
 .seg.sm button { min-height: 26px; padding: 0 11px; font-size: 13px; }
 
-/* Ranking */
+/* 쌀숭이 랭킹 */
 .rank-view { display: grid; gap: 16px; }
 .rank-card { padding: 20px 24px 22px; display: flex; flex-direction: column; gap: 14px; }
 .rank-top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
@@ -165,7 +165,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .rank-form input { width: 100%; box-sizing: border-box; }
 .err { color: #d63a3a; font-size: 13px; }
 
-/* First-place celebration */
+/* 1등 축하 */
 .party { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(10, 10, 12, .62); padding: 16px; }
 .party[hidden] { display: none; }
 .party canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -291,152 +291,176 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
   .fade { animation: fade .35s cubic-bezier(.16, 1, .3, 1) both; }
   @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 }
+.settings-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:12px 0 24px}.settings-grid label {display:grid;gap:8px}.settings-grid input {padding:10px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px}
 </style>
 
-<a class="skip" href="#main">Skip to content</a>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
 <div class="wrap">
   <header class="top">
-    <div class="brand"><img src="/favicon.png" alt=""><h1>Token Tracker</h1><span id="span"></span></div>
+    <div class="brand"><img src="/favicon.png" alt=""><h1>토큰 트래커</h1><span id="span"></span></div>
     <div class="tools">
-      <span class="tag" id="status" aria-live="polite">Loading…</span>
-      <a class="btn" id="viewBtn" href="#v=rank"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 14h6M8 11v3M4.5 2h7v3.5a3.5 3.5 0 0 1-7 0zM4.5 3.5H2.5v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2"/></svg><span>Ranking</span></a>
-      <button class="btn" id="updateBtn" type="button">Check for updates</button>
-      <button class="icon" id="refreshBtn" type="button" aria-label="Refresh logs">
+      <span class="tag" id="status" aria-live="polite">불러오는 중…</span>
+      <a class="btn" id="viewBtn" href="#v=rank"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 14h6M8 11v3M4.5 2h7v3.5a3.5 3.5 0 0 1-7 0zM4.5 3.5H2.5v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2"/></svg><span>랭킹</span></a>
+      <button class="btn" id="settingsBtn" type="button">설정</button>
+      <button class="btn" id="updateBtn" type="button">업데이트 확인</button>
+      <button class="icon" id="refreshBtn" type="button" aria-label="로그 다시 읽기">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
       </button>
-      <button class="icon" id="themeBtn" type="button" aria-label="Toggle light/dark theme">
+      <button class="icon" id="themeBtn" type="button" aria-label="밝은/어두운 테마 바꾸기">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg>
       </button>
     </div>
   </header>
 
-  <details class="card" style="padding:14px 20px;margin-bottom:16px">
-    <summary>Choose apps</summary>
-    <form id="sourceForm" style="display:flex;flex-wrap:wrap;gap:16px;margin-top:12px"></form>
-    <p class="note">Select apps independently. Only connected apps appear in quota cards and the widget.</p>
-  </details>
+  <section class="card" id="settings-panel" style="padding:20px;margin-bottom:16px" hidden>
+    <h2>설정</h2><p class="note">파일을 직접 수정하지 않고 앱과 위젯 설정을 바꿀 수 있습니다.</p>
+    <h3>표시할 앱</h3><form id="sourceForm" style="display:flex;flex-wrap:wrap;gap:16px;margin:12px 0"></form>
+    <p class="note">연결되지 않은 앱은 위젯과 한도 카드에서 숨깁니다.</p>
+    <form id="settingsForm">
+      <h3>월 구독료 (USD)</h3><p class="note">0이면 감지된 요금제 가격을 사용합니다. 같은 구독료는 앱별로 중복 합산하지 않습니다.</p>
+      <div class="settings-grid">
+        <label>Claude<input name="claude" type="number" min="0" max="9999" step="0.01"></label>
+        <label>Codex · ChatGPT<input name="codex" type="number" min="0" max="9999" step="0.01"></label>
+        <label>Gemini · Antigravity<input name="gemini" type="number" min="0" max="9999" step="0.01"></label>
+      </div>
+      <h3>위젯 모양</h3><div class="settings-grid">
+        <label>글꼴<input name="font" type="text" maxlength="80" placeholder="기본 글꼴"></label>
+        <label>숫자 글꼴<input name="number_font" type="text" maxlength="80" placeholder="기본 글꼴"></label>
+        <label>불투명도 (20~100%)<input name="opacity" type="number" min="20" max="100" step="1"></label>
+      </div>
+      <p class="note">설치된 글꼴 이름을 입력하세요. 글꼴·불투명도·항상 위 표시는 바로 적용됩니다.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:20px;margin:20px 0">
+        <label><input name="topmost" type="checkbox"> 항상 위에 표시</label>
+        <label><input name="taskbar" type="checkbox"> 작업 표시줄에 표시</label>
+        <label><input name="auto_update" type="checkbox"> 자동 업데이트</label>
+      </div>
+      <p class="note">작업 표시줄 표시와 자동 업데이트 변경은 앱을 다시 실행하면 적용됩니다.</p>
+      <button class="btn primary" type="submit">설정 저장</button> <button class="btn" id="settingsBack" type="button">대시보드로 돌아가기</button>
+      <p id="settingsStatus" class="note" role="status"></p>
+    </form>
+  </section>
 
-  <section class="limits" id="limits" aria-label="Remaining limits" hidden></section>
+  <section class="limits" id="limits" aria-label="남은 한도" hidden></section>
 
-  <section class="card ratio" id="ratio-card" aria-label="Subscription value" hidden>
+  <section class="card ratio" id="ratio-card" aria-label="쌀먹 비율" hidden>
     <div class="ratio-l">
-      <div class="head"><span class="k">Subscription value</span>
-        <div class="seg sm" id="rperiod" role="group" aria-label="Value period"><button type="button" data-v="day">Today</button><button type="button" data-v="week">This week</button><button type="button" data-v="month">This month</button></div>
+      <div class="head"><span class="k">쌀먹 비율</span>
+        <div class="seg sm" id="rperiod" role="group" aria-label="쌀먹 기간"><button type="button" data-v="day">오늘</button><button type="button" data-v="week">이번 주</button><button type="button" data-v="month">이번 달</button></div>
       </div>
       <div class="ratio-v" id="r-v">×0</div>
       <div class="sub" id="r-sub"></div>
       <div class="gain" id="r-gain"></div>
-      <div class="note">API equivalent cost / subscription. This month uses the full monthly price; today uses 1/30 and this week uses 7/30. Usage follows calendar periods.</div>
+      <div class="note">API 환산 비용 ÷ 구독료. 이번 달은 월 구독료 전액, 오늘은 월 구독료 / 30, 이번 주는 월 구독료 × 7 / 30과 비교합니다. 구독 결제일 기준의 롤링 사용량이 아닙니다.</div>
       <div class="note" id="ratio-excluded"></div>
     </div>
     <div class="ratio-r">
-      <div class="rrow rh"><span>App · Plan</span><span>API cost (line = subscription)</span><span style="text-align:right">API / subscription</span><span style="text-align:right">Ratio</span></div>
+      <div class="rrow rh"><span>도구 · 요금제</span><span>API 환산 (세로선 = 구독료, 본전)</span><span style="text-align:right">환산 / 구독</span><span style="text-align:right">배율</span></div>
       <div id="r-rows"></div>
-      <div class="rfoot"><span>Detected plan prices are used. Enter unknown subscription prices below. Apps sharing a subscription are not billed twice.</span><button class="linkbtn" id="subEdit" type="button">Edit subscription</button></div>
+      <div class="rfoot"><span>감지한 요금제 가격을 사용합니다. 자동 판별이 안 되는 구독료는 직접 입력하세요. Codex·ChatGPT, Gemini CLI·Antigravity·Gemini 웹은 같은 구독료를 중복 합산하지 않습니다.</span><button class="linkbtn" id="subEdit" type="button">구독료 수정</button></div>
       <form class="subform" id="subForm" hidden>
-        <label>Claude ($/month)<input name="claude" type="number" min="0" step="1" placeholder="Auto"></label>
-        <label>Codex ($/month)<input name="codex" type="number" min="0" step="1" placeholder="Auto"></label>
-        <label>Gemini ($/month)<input name="gemini" type="number" min="0" step="1" placeholder="Not used"></label>
-        <button class="btn primary" type="submit">Save</button>
-        <span class="note">Leave blank to use the detected plan price</span>
+        <label>Claude ($/월)<input name="claude" type="number" min="0" step="1" placeholder="자동"></label>
+        <label>Codex ($/월)<input name="codex" type="number" min="0" step="1" placeholder="자동"></label>
+        <label>Gemini ($/월)<input name="gemini" type="number" min="0" step="1" placeholder="안 씀"></label>
+        <button class="btn primary" type="submit">저장</button>
+        <span class="note">비워 두면 요금제 가격을 써요</span>
       </form>
     </div>
   </section>
 
-  <section class="rank-view" id="rank-view" aria-label="Ranking" hidden>
-    <div class="card rank-card" id="rank-card"><div class="empty">Loading…</div></div>
+  <section class="rank-view" id="rank-view" aria-label="쌀숭이 랭킹" hidden>
+    <div class="card rank-card" id="rank-card"><div class="empty">불러오는 중…</div></div>
   </section>
 
   <div class="party" id="party" hidden role="dialog" aria-modal="true" aria-labelledby="party-t">
     <canvas id="confetti" aria-hidden="true"></canvas>
     <div class="party-card">
-      <img src="/ssalsoongi.jpg" alt="An orangutan celebrating in a shower of coins">
+      <img src="/ssalsoongi.jpg" alt="동전 비 속에서 덩굴에 매달려 신난 오랑우탄">
       <div>
-        <h2 id="party-t">Congratulations!</h2>
-        <p>You are the <b>top user</b> in your group!</p>
+        <h2 id="party-t">축하해요!</h2>
+        <p>당신은 그룹 내 <b>1등 쌀숭이</b>에요!</p>
         <p class="note" id="party-sub"></p>
-        <button class="btn primary" id="partyClose" type="button">Thanks</button>
+        <button class="btn primary" id="partyClose" type="button">고마워요</button>
       </div>
     </div>
   </div>
 
-  <div class="card empty" id="empty-all" hidden>No usage records yet. Use Claude Code or Codex, then refresh.</div>
+  <div class="card empty" id="empty-all" hidden>아직 모은 기록이 없어요. Claude Code나 Codex를 한 번 쓰고 나서 오른쪽 위 새로고침을 눌러 주세요.</div>
   <main id="main" style="display:grid;gap:16px">
-    <section class="hero" aria-label="Total usage">
+    <section class="hero" aria-label="전체 사용량">
       <div class="card lead" id="lead-card">
-        <div><div class="k">Total tokens</div>
+        <div><div class="k">총 사용 토큰</div>
         <div class="v" id="h-total">0</div>
         <div class="sub" id="h-total-s"></div></div>
         <div class="lead-chart" id="lead-chart"></div>
       </div>
       <div class="card side">
-        <div class="head"><span class="k">Last 30 days tokens</span></div>
+        <div class="head"><span class="k">최근 30일 토큰</span></div>
         <div class="v" id="h-30">0</div>
         <div class="cmp" id="c-30"></div>
       </div>
       <div class="card side">
-        <div class="head"><span class="k">Last 30 days API cost</span></div>
+        <div class="head"><span class="k">최근 30일 API 환산 비용</span></div>
         <div class="v" id="h-cost">$0</div>
         <div class="cmp" id="c-cost"></div>
       </div>
     </section>
 
-    <div class="bar" role="toolbar" aria-label="View settings">
-      <div class="seg" id="range" role="group" aria-label="Period">
-        <button type="button" data-v="7">7 days</button><button type="button" data-v="30">30 days</button><button type="button" data-v="90">90 days</button><button type="button" data-v="all">All</button>
+    <div class="bar" role="toolbar" aria-label="보기 설정">
+      <div class="seg" id="range" role="group" aria-label="기간">
+        <button type="button" data-v="7">7일</button><button type="button" data-v="30">30일</button><button type="button" data-v="90">90일</button><button type="button" data-v="all">전체</button>
       </div>
-      <div class="seg" id="tool" role="group" aria-label="App">
-        <button type="button" data-v="all">All</button><button type="button" data-v="Claude Code">Claude</button><button type="button" data-v="Codex">Codex</button>
+      <div class="seg" id="tool" role="group" aria-label="도구">
+        <button type="button" data-v="all">전체</button><button type="button" data-v="Claude Code">Claude</button><button type="button" data-v="Codex">Codex</button>
       </div>
-      <div class="seg" id="unit" role="group" aria-label="Unit">
-        <button type="button" data-v="tokens">Tokens</button><button type="button" data-v="cost">Cost $</button>
+      <div class="seg" id="unit" role="group" aria-label="단위">
+        <button type="button" data-v="tokens">토큰</button><button type="button" data-v="cost">비용 $</button>
       </div>
       <div class="chips" id="chips" aria-live="polite"></div>
-      <span class="hint" id="hint">Click a model or project to filter</span>
+      <span class="hint" id="hint">모델이나 프로젝트를 누르면 그것만 걸러 봐요</span>
     </div>
 
     <section class="card" id="hours-card">
-      <h2>Weekday and hour <small id="hours-sub"></small></h2>
+      <h2>요일과 시간대 <small id="hours-sub"></small></h2>
       <div id="hours" style="min-height:240px"></div>
     </section>
 
     <section class="card" id="daily-card">
-      <h2><span id="daily-title">Daily tokens</span><small id="daily-sub"></small></h2>
+      <h2><span id="daily-title">일별 토큰</span><small id="daily-sub"></small></h2>
       <div class="legend" id="legend"></div>
       <div id="daily" style="min-height:280px"></div>
     </section>
 
     <section class="card" id="mix-card">
-      <h2>Input, output and cache <small id="mix-sub"></small></h2>
+      <h2>입력, 출력, 캐시 <small id="mix-sub"></small></h2>
       <div class="mix">
         <div class="mix-kpi">
-          <div><div class="k">Cache hit rate</div><div class="v" id="x-hit">0%</div><div class="sub">Cached share of all input</div></div>
-          <div class="mini"><span>Savings from caching</span><b id="x-save">$0</b></div>
-          <div class="mini"><span>Output per 100 input tokens</span><b id="x-out">0</b></div>
+          <div><div class="k">캐시 적중률</div><div class="v" id="x-hit">0%</div><div class="sub">입력 중 캐시에서 읽은 비율</div></div>
+          <div class="mini"><span>캐시로 아낀 비용</span><b id="x-save">$0</b></div>
+          <div class="mini"><span>입력 100토큰당 출력</span><b id="x-out">0</b></div>
         </div>
         <div><div class="share" id="x-share" aria-hidden="true"></div><div class="mlist" id="x-rows"></div></div>
-        <div class="mix-chart-wrap"><div class="k" style="font-size:13px">Daily cache hit rate</div><div id="x-chart" style="min-height:180px"></div></div>
+        <div class="mix-chart-wrap"><div class="k" style="font-size:13px">일별 캐시 적중률</div><div id="x-chart" style="min-height:180px"></div></div>
       </div>
     </section>
 
     <div class="r2">
       <section class="card" id="cum-card">
-        <h2>Cumulative API cost <small id="cum-sub"></small></h2>
+        <h2>누적 API 환산 비용 <small id="cum-sub"></small></h2>
         <div id="cum" style="min-height:220px"></div>
       </section>
       <section class="card" id="month-card">
-        <h2>Monthly <small id="month-sub">All time</small></h2>
+        <h2>월별 <small id="month-sub">전체 기간</small></h2>
         <div id="month" style="min-height:220px"></div>
       </section>
     </div>
 
     <section class="card" id="proj-card">
-      <h2>Project <small id="proj-sub"></small></h2>
+      <h2>프로젝트 <small id="proj-sub"></small></h2>
       <div id="proj" style="min-height:300px"></div>
     </section>
 
     <section class="card">
-      <h2>Model <small id="model-sub"></small></h2>
+      <h2>모델 <small id="model-sub"></small></h2>
         <div class="mlist" id="models"></div>
     </section>
 
@@ -458,12 +482,12 @@ function readHash() {
   if (['tokens', 'cost'].includes(p.get('u'))) st.unit = p.get('u');
   if (['all', 'Claude Code', 'Codex', 'ChatGPT', 'Gemini CLI', 'Antigravity', 'Gemini Web'].includes(p.get('t'))) st.tool = p.get('t');
   st.model = p.get('m'); st.project = p.get('p');
-  st.view = p.get('v') === 'rank' ? 'rank' : 'main';
+  st.view = ['rank','settings'].includes(p.get('v')) ? p.get('v') : 'main';
 }
 function writeHash() {
   const p = new URLSearchParams(); p.set('r', st.range); p.set('u', st.unit); p.set('t', st.tool);
   if (st.model) p.set('m', st.model); if (st.project) p.set('p', st.project);
-  if (st.view === 'rank') p.set('v', 'rank');
+  if (st.view !== 'main') p.set('v', st.view);
   try { history.replaceState(null, '', '#' + p.toString()); } catch (e) {}
 }
 readHash();
@@ -478,10 +502,10 @@ const key = () => st.unit === 'cost' ? 'cost_usd' : 'tokens';
 const P = (s) => new Date(s + 'T00:00:00');
 const iso = d3.timeFormat('%Y-%m-%d');
 const md = d3.timeFormat('%-m/%-d');
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const dayName = (d) => DAYS[(d.getDay() + 6) % 7];
 const pct = (x) => x >= .995 ? '100%' : x > 0 && x < .01 ? '<1%' : Math.round(x * 100) + '%';
-const rangeLabel = () => st.range === 'all' ? 'All time' : 'Last ' + st.range + ' days';
+const rangeLabel = () => st.range === 'all' ? '전체 기간' : '최근 ' + st.range + '일';
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
@@ -526,10 +550,10 @@ function hero() {
   const all = DATA.daily.filter(pass);
   const total = d3.sum(all, (r) => r.tokens);
   const span = d3.timeDay.count(P(FIRST), P(LAST)) + 1;
-  $('span').textContent = `${md(P(FIRST))} - ${md(P(LAST))}, ${span} days`;
+  $('span').textContent = `${md(P(FIRST))} - ${md(P(LAST))}, ${span}일`;
   $('h-total').textContent = tok(total);
   const active = new Set(all.map((r) => r.date)).size;
-  $('h-total-s').textContent = `${active} active days, daily average ${tok(total / Math.max(1, active))}`;
+  $('h-total-s').textContent = `${active}일 동안 사용, 쓴 날 평균 ${tok(total / Math.max(1, active))}`;
 
   const r30 = DATA.daily.filter((r) => r.date >= from('30') && pass(r));
   const [pa, pb] = prevWindow(30);
@@ -542,7 +566,7 @@ function hero() {
   const bars = (node, now, before, fmt) => {
     const mx = Math.max(now, before) || 1;
     const row = (cls, label, v) => { const d = el('div', cls); const tr = el('span'); const i = el('i'); i.style.width = Math.max(1, 100 * v / mx) + '%'; tr.append(i); d.append(el('span', '', label), tr, el('b', '', fmt(v))); return d; };
-    node.replaceChildren(row('', 'Last 30 days', now), row('prev', before ? 'Previous 30 days' : 'No previous records', before));
+    node.replaceChildren(row('', '최근 30일', now), row('prev', before ? '이전 30일' : '이전 기록 없음', before));
   };
   bars($('c-30'), t30, tp, tok); bars($('c-cost'), c30, cp, usd);
   leadChart(all);
@@ -556,10 +580,10 @@ function leadChart(all) {
   const days = d3.timeDays(P(FIRST), d3.timeDay.offset(P(LAST), 1));
   const pts = days.map((d) => ({ d, v: by.get(iso(d)) || 0 }));
   const x = d3.scaleTime([P(FIRST), P(LAST)], [0, W]), y = d3.scaleLinear([0, d3.max(pts, (p) => p.v) || 1], [H - mb, 26]);
-  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'none').attr('role', 'img').attr('aria-label', 'Daily tokens across all time');
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'none').attr('role', 'img').attr('aria-label', '전체 기간 일별 토큰 추이');
   const x30 = x(P(from('30')));
   svg.append('rect').attr('x', x30).attr('y', 0).attr('width', W - x30).attr('height', H - mb).attr('fill', 'var(--accent-soft)').attr('rx', 6);
-  svg.append('text').attr('x', W - 8).attr('y', 15).attr('text-anchor', 'end').attr('style', 'fill: var(--accent)').text('Last 30 days');
+  svg.append('text').attr('x', W - 8).attr('y', 15).attr('text-anchor', 'end').attr('style', 'fill: var(--accent)').text('최근 30일');
   const gid = 'lg' + Math.random().toString(36).slice(2);
   const g = svg.append('defs').append('linearGradient').attr('id', gid).attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', 1);
   [[0, .35], [1, 0]].forEach(([o, a]) => g.append('stop').attr('offset', o).attr('style', `stop-color: var(--accent); stop-opacity: ${a}`));
@@ -567,10 +591,10 @@ function leadChart(all) {
   svg.append('path').attr('d', d3.line().x((p) => x(p.d)).y((p) => y(p.v)).curve(d3.curveMonotoneX)(pts)).attr('fill', 'none').attr('stroke', 'var(--accent)').attr('stroke-width', 1.6);
   svg.append('line').attr('x1', 0).attr('x2', W).attr('y1', H - mb).attr('y2', H - mb).attr('stroke', 'var(--line)');
   const months = d3.timeMonths(d3.timeMonth.ceil(P(FIRST)), d3.timeDay.offset(P(LAST), 1));
-  svg.append('g').selectAll('text').data(months).join('text').attr('x', x).attr('y', H - 4).attr('text-anchor', 'middle').text((d) => d3.timeFormat('%b')(d));
+  svg.append('g').selectAll('text').data(months).join('text').attr('x', x).attr('y', H - 4).attr('text-anchor', 'middle').text((d) => (d.getMonth() + 1) + '월');
   const tip = tipIn(card), dot = svg.append('circle').attr('r', 3.5).attr('fill', 'var(--accent)').attr('stroke', 'var(--card)').attr('stroke-width', 2).attr('opacity', 0);
   svg.append('rect').attr('width', W).attr('height', H).attr('fill', 'transparent')
-    .on('mousemove', (ev) => { const [mx] = d3.pointer(ev); const i = Math.max(0, Math.min(pts.length - 1, Math.round(d3.timeDay.count(P(FIRST), x.invert(mx))))); const p = pts[i]; dot.attr('cx', x(p.d)).attr('cy', y(p.v)).attr('opacity', 1); showTip(tip, card, ev, `${md(p.d)} (${dayName(p.d)})`, [[null, 'Tokens', tok(p.v)]]); })
+    .on('mousemove', (ev) => { const [mx] = d3.pointer(ev); const i = Math.max(0, Math.min(pts.length - 1, Math.round(d3.timeDay.count(P(FIRST), x.invert(mx))))); const p = pts[i]; dot.attr('cx', x(p.d)).attr('cy', y(p.v)).attr('opacity', 1); showTip(tip, card, ev, `${md(p.d)} (${dayName(p.d)})`, [[null, '토큰', tok(p.v)]]); })
     .on('mouseleave', () => { tip.hidden = true; dot.attr('opacity', 0); });
   box.replaceChildren(svg.node());
 }
@@ -592,16 +616,16 @@ function daily() {
   for (const r of R) { const g = grid.get(r.date); if (g && r.model in g) g[r.model] += r[k] || 0; }
   const data = days.map((d) => ({ d, ...grid.get(iso(d)) }));
   const sum = d3.sum(data, (d) => d3.sum(shown, (m) => d[m]));
-  $('daily-title').textContent = st.unit === 'cost' ? 'Daily API cost' : 'Daily tokens';
-  const sub = $('daily-sub'); sub.replaceChildren(rangeLabel() + ' Total ', el('b', '', val(sum)));
-  if (!shown.length || !sum) { box.replaceChildren(el('div', 'empty', shown.length ? 'No records in this period' : 'Select at least one model in the legend')); return; }
+  $('daily-title').textContent = st.unit === 'cost' ? '일별 API 환산 비용' : '일별 토큰';
+  const sub = $('daily-sub'); sub.replaceChildren(rangeLabel() + ' 합계 ', el('b', '', val(sum)));
+  if (!shown.length || !sum) { box.replaceChildren(el('div', 'empty', shown.length ? '이 기간에는 기록이 없어요' : '범례에서 모델을 하나 이상 켜 주세요')); return; }
   const W = box.clientWidth || 800, H = 280, mb = 24, mt = 8;
   const y = d3.scaleLinear([0, d3.max(data, (d) => d3.sum(shown, (m) => d[m])) || 1], [H - mb, mt]).nice();
   const ticks = y.ticks(4);
   const ml = 14 + d3.max(ticks, (t) => val(t).length) * 6.8;
   const x = d3.scaleBand(days.map(iso), [ml, W]).paddingInner(days.length > 60 ? .2 : .32);
   const bw = Math.min(28, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
-  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', `${rangeLabel()} Daily usage chart`);
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', `${rangeLabel()} 일별 사용량 막대 그래프`);
   svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', ml).attr('x2', W).attr('y1', y).attr('y2', y).attr('stroke', 'var(--line)').attr('stroke-dasharray', (t) => t ? '2 4' : null);
   svg.append('g').selectAll('text').data(ticks).join('text').attr('x', ml - 10).attr('y', (t) => y(t) + 4).attr('text-anchor', 'end').text(val);
   const hl = svg.append('rect').attr('y', mt).attr('height', H - mb - mt).attr('width', x.step()).attr('rx', 4).attr('fill', 'var(--ink)').attr('opacity', 0).attr('pointer-events', 'none');
@@ -617,8 +641,8 @@ function daily() {
     .on('mousemove', (ev, d) => {
       hl.attr('x', x(iso(d.d)) - (x.step() - x.bandwidth()) / 2).attr('opacity', .05);
       const ls = shown.filter((m) => d[m] > 0).reverse().map((m) => [color(m), m, val(d[m])]);
-      ls.push([null, 'Total', val(d3.sum(shown, (m) => d[m])), true]);
-      showTip(tip, card, ev, `${d3.timeFormat('%b %-d')(d.d)} (${dayName(d.d)})`, ls);
+      ls.push([null, '합계', val(d3.sum(shown, (m) => d[m])), true]);
+      showTip(tip, card, ev, `${d3.timeFormat('%-m월 %-d일')(d.d)} (${dayName(d.d)})`, ls);
     })
     .on('mouseleave', () => { tip.hidden = true; hl.attr('opacity', 0); });
   box.replaceChildren(svg.node());
@@ -642,7 +666,7 @@ function cumulative() {
   const W = box.clientWidth || 500, H = 220, mb = 24, mt = 10, ml = 46;
   const x = d3.scaleTime([days[0], days[days.length - 1]], [ml, W - 8]);
   const y = d3.scaleLinear([0, Math.max(acc, prev ? prev[prev.length - 1].v : 0) || 1], [H - mb, mt]).nice();
-  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Cumulative API cost chart');
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', '누적 API 환산 비용 선 그래프');
   const ticks = y.ticks(4);
   svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', ml).attr('x2', W).attr('y1', y).attr('y2', y).attr('stroke', 'var(--line)').attr('stroke-dasharray', (t) => t ? '2 4' : null);
   svg.append('g').selectAll('text').data(ticks).join('text').attr('x', ml - 10).attr('y', (t) => y(t) + 4).attr('text-anchor', 'end').text((t) => '$' + d3.format('~s')(t));
@@ -658,17 +682,17 @@ function cumulative() {
   if (prev) {
     const lg = svg.append('g').attr('transform', `translate(${ml + 6},${mt + 4})`);
     lg.append('line').attr('x2', 18).attr('y1', 0).attr('y2', 0).attr('stroke', 'var(--accent)').attr('stroke-width', 2);
-    lg.append('text').attr('x', 24).attr('y', 4).text('Current');
+    lg.append('text').attr('x', 24).attr('y', 4).text('이번');
     lg.append('line').attr('x1', 60).attr('x2', 78).attr('stroke', 'var(--muted)').attr('stroke-width', 1.5).attr('stroke-dasharray', '4 4');
-    lg.append('text').attr('x', 84).attr('y', 4).text('Previous period');
+    lg.append('text').attr('x', 84).attr('y', 4).text('직전 같은 기간');
   }
   const tip = tipIn(card); const dot = svg.append('circle').attr('r', 4).attr('fill', 'var(--accent)').attr('opacity', 0);
   svg.append('rect').attr('x', ml).attr('width', W - ml).attr('height', H).attr('fill', 'transparent')
     .on('mousemove', (ev) => {
       const [mx] = d3.pointer(ev); const i = Math.max(0, Math.min(pts.length - 1, Math.round(d3.timeDay.count(days[0], x.invert(mx))))); const p = pts[i];
       dot.attr('cx', x(p.d)).attr('cy', y(p.v)).attr('opacity', 1);
-      const ls = [[null, 'Cumulative', usd(p.v)], [null, 'That day', usd(by.get(iso(p.d)) || 0)]]; if (prev) ls.push([null, 'Previous period through the same day', usd(prev[i].v)]);
-      showTip(tip, card, ev, d3.timeFormat('%b %-d')(p.d), ls);
+      const ls = [[null, '누적', usd(p.v)], [null, '그날', usd(by.get(iso(p.d)) || 0)]]; if (prev) ls.push([null, '직전 기간 같은 날까지', usd(prev[i].v)]);
+      showTip(tip, card, ev, d3.timeFormat('%-m월 %-d일')(p.d), ls);
     })
     .on('mouseleave', () => { tip.hidden = true; dot.attr('opacity', 0); });
   box.replaceChildren(svg.node());
@@ -682,14 +706,14 @@ function monthly() {
   const cur = LAST.slice(0, 7);
   const W = box.clientWidth || 400, H = 220, mb = 24, mt = 24;
   const x = d3.scaleBand(by.map((d) => d[0]), [4, W - 4]).padding(.3), y = d3.scaleLinear([0, d3.max(by, (d) => d[1]) || 1], [H - mb, mt]);
-  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Monthly usage');
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', '월별 사용량');
   svg.append('line').attr('x1', 0).attr('x2', W).attr('y1', H - mb).attr('y2', H - mb).attr('stroke', 'var(--line)');
   const bw = Math.min(56, x.bandwidth()), off = (x.bandwidth() - bw) / 2;
   svg.selectAll('rect.b').data(by).join('rect').attr('x', (d) => x(d[0]) + off).attr('width', bw).attr('y', (d) => y(d[1])).attr('height', (d) => Math.max(1, H - mb - y(d[1]))).attr('rx', 6)
     .attr('fill', (d) => d[0] === cur ? 'var(--accent-soft)' : 'var(--accent)').attr('stroke', (d) => d[0] === cur ? 'var(--accent)' : null).attr('stroke-dasharray', '3 3');
   svg.selectAll('text.v').data(by).join('text').attr('x', (d) => x(d[0]) + x.bandwidth() / 2).attr('y', (d) => y(d[1]) - 8).attr('text-anchor', 'middle').attr('style', 'fill: var(--ink); font-family: var(--font); font-size: 13px; font-weight: 700').text((d) => val(d[1]));
-  svg.selectAll('text.m').data(by).join('text').attr('x', (d) => x(d[0]) + x.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', 'middle').text((d) => d3.timeFormat('%b')(P(d[0] + '-01')) + (d[0] === cur ? ' In progress' : ''));
-  $('month-sub').textContent = 'All time';
+  svg.selectAll('text.m').data(by).join('text').attr('x', (d) => x(d[0]) + x.bandwidth() / 2).attr('y', H - 6).attr('text-anchor', 'middle').text((d) => Number(d[0].slice(5)) + '월' + (d[0] === cur ? ' 진행 중' : ''));
+  $('month-sub').textContent = '전체 기간';
   box.replaceChildren(svg.node());
 }
 
@@ -698,18 +722,18 @@ function models() {
   const R = DATA.daily.filter((r) => r.date >= from(st.range) && passTool(r) && (!st.project || r.project === st.project));
   const by = d3.rollups(R, (v) => ({ t: d3.sum(v, (r) => r.tokens), c: d3.sum(v, (r) => r.cost_usd || 0), priced: v.some((r) => r.cost_usd != null) }), (r) => r.model).sort((a, b) => b[1].t - a[1].t);
   const total = d3.sum(by, (d) => d[1].t) || 1;
-  $('model-sub').textContent = `${rangeLabel()}, ${by.length} items`;
+  $('model-sub').textContent = `${rangeLabel()}, ${by.length}개`;
   if (false) $('share').replaceChildren(...by.map(([m, v]) => { const s = el('span'); s.style.flex = String(v.t); s.style.background = color(m); s.style.opacity = st.model && st.model !== m ? .3 : 1; return s; }));
   const maxT = d3.max(by, (d) => st.unit === 'cost' ? d[1].c : d[1].t) || 1;
-  const head = el('div', 'm mhead mfull'); head.append(el('span', '', 'Model'), el('span', 'bar2', ''), el('span', 'num', 'Tokens'), el('span', 'num', 'Share'), el('span', 'num', 'API equivalent'));
+  const head = el('div', 'm mhead mfull'); head.append(el('span', '', '모델'), el('span', 'bar2', ''), el('span', 'num', '토큰'), el('span', 'num', '비중'), el('span', 'num', 'API 환산'));
   const box = $('models');
-  if (!by.length) { box.replaceChildren(el('div', 'empty', 'No records in this period')); return; }
+  if (!by.length) { box.replaceChildren(el('div', 'empty', '이 기간에는 기록이 없어요')); return; }
   box.replaceChildren(head, ...by.map(([m, v]) => {
     const row = el('div', 'm mfull' + (st.model === m ? ' on' : st.model ? ' off' : '')); row.tabIndex = 0; row.setAttribute('role', 'button');
-    row.setAttribute('aria-pressed', String(st.model === m)); row.setAttribute('aria-label', `Show only ${m}`);
+    row.setAttribute('aria-pressed', String(st.model === m)); row.setAttribute('aria-label', `${m}만 보기`);
     const n = el('div', 'n'); const i = el('i'); i.style.background = color(m); const name = el('span', '', m); name.setAttribute('translate', 'no'); name.title = m; n.append(i, name);
     const bar = el('div', 'bar2'); const fill = el('span'); fill.style.width = (100 * (st.unit === 'cost' ? v.c : v.t) / maxT) + '%'; fill.style.background = color(m); bar.append(fill);
-    row.append(n, bar, el('span', 'num', tok(v.t)), el('span', 'num pct', pct(v.t / total)), v.priced ? el('span', 'num', usd(v.c)) : el('span', 'num na', 'Unknown price'));
+    row.append(n, bar, el('span', 'num', tok(v.t)), el('span', 'num pct', pct(v.t / total)), v.priced ? el('span', 'num', usd(v.c)) : el('span', 'num na', '단가 없음'));
     const act = () => setFilter('model', st.model === m ? null : m);
     row.onclick = act; row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } };
     return row;
@@ -722,9 +746,9 @@ function projects() {
   const R = DATA.daily.filter((r) => r.date >= from(st.range) && passTool(r) && (!st.model || r.model === st.model));
   const by = d3.rollups(R, (v) => ({ t: d3.sum(v, (r) => r.tokens), c: d3.sum(v, (r) => r.cost_usd || 0) }), (r) => r.project).sort((a, b) => b[1].t - a[1].t);
   const top = by.slice(0, 10), rest = by.slice(10);
-  if (rest.length) top.push([`Other ${rest.length}`, { t: d3.sum(rest, (d) => d[1].t), c: d3.sum(rest, (d) => d[1].c), other: true }]);
-  $('proj-sub').textContent = `${rangeLabel()}, ${by.length} items`;
-  if (!by.length) { box.replaceChildren(el('div', 'empty', 'No records in this period')); return; }
+  if (rest.length) top.push([`나머지 ${rest.length}개`, { t: d3.sum(rest, (d) => d[1].t), c: d3.sum(rest, (d) => d[1].c), other: true }]);
+  $('proj-sub').textContent = `${rangeLabel()}, ${by.length}개`;
+  if (!by.length) { box.replaceChildren(el('div', 'empty', '이 기간에는 기록이 없어요')); return; }
   const W = box.clientWidth || 500, H = 300;
   const root = d3.treemap().size([W, H]).paddingInner(3).round(true)(d3.hierarchy({ children: top.map(([name, v]) => ({ name, ...v })) }).sum((d) => Math.max(0, st.unit === 'cost' ? d.c : d.t)));
   const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('class', 'tm');
@@ -739,7 +763,7 @@ function projects() {
     .attr('fill-opacity', (d, i) => (st.project && st.project !== d.data.name ? .12 : 1) * (d.data.other ? .35 : strength(i)));
   const act = (d) => { if (!d.data.other) setFilter('project', st.project === d.data.name ? null : d.data.name); };
   g.on('click', (ev, d) => act(d)).on('keydown', (ev, d) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); act(d); } })
-    .on('mousemove', (ev, d) => showTip(tip, card, ev, d.data.name, [[null, 'Tokens', tok(d.data.t)], [null, 'API equivalent', usd(d.data.c)], [null, 'Share', pct(d.value / root.value)]]))
+    .on('mousemove', (ev, d) => showTip(tip, card, ev, d.data.name, [[null, '토큰', tok(d.data.t)], [null, 'API 환산', usd(d.data.c)], [null, '비중', pct(d.value / root.value)]]))
     .on('mouseleave', hideTip(tip));
   const fits = (d, w, h) => d.x1 - d.x0 > w && d.y1 - d.y0 > h;
   const clip = (d) => { const w = d.x1 - d.x0 - 18; const s = d.data.name; return s.length * 7.4 > w ? s.slice(0, Math.max(3, Math.floor(w / 7.4) - 1)) + '…' : s; };
@@ -753,29 +777,29 @@ function projects() {
 function hours() {
   const box = $('hours'), card = $('hours-card');
   const R = DATA.hours.filter((r) => r.date >= from(st.range) && pass(r));
-  $('hours-sub').textContent = `${rangeLabel()}, Darker means more usage`;
+  $('hours-sub').textContent = `${rangeLabel()}, 진할수록 많이 씀`;
   const grid = d3.rollup(R, (v) => d3.sum(v, (r) => r.tokens), (r) => r.weekday, (r) => r.hour);
   const get = (w, h) => (grid.get(w) && grid.get(w).get(h)) || 0;
   const max = d3.max([...grid.values()].flatMap((m) => [...m.values()])) || 1;
   const hourTot = d3.range(24).map((h) => d3.sum(d3.range(7), (w) => get(w, h)));
   const W = box.clientWidth || 900, ml = 24, cw = (W - ml) / 24, ch = 24, top = 44, H = top + ch * 7 + 22;
-  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Usage by weekday and hour');
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', '요일과 시간대별 사용량');
   const yh = d3.scaleLinear([0, d3.max(hourTot) || 1], [0, top - 12]);
   const tip = tipIn(card);
   svg.append('g').selectAll('rect').data(hourTot).join('rect').attr('x', (v, h) => ml + h * cw + 2).attr('width', cw - 4).attr('y', (v) => top - 8 - yh(v)).attr('height', (v) => Math.max(1, yh(v))).attr('rx', 2).attr('fill', 'var(--muted)').attr('opacity', .5)
-    .on('mousemove', (ev, v) => showTip(tip, card, ev, `${hourTot.indexOf(v)}:00 · All`, [[null, 'Tokens', tok(v)]])).on('mouseleave', hideTip(tip));
+    .on('mousemove', (ev, v) => showTip(tip, card, ev, `${hourTot.indexOf(v)}시 전체`, [[null, '토큰', tok(v)]])).on('mouseleave', hideTip(tip));
   DAYS.forEach((d, i) => svg.append('text').attr('x', ml - 8).attr('y', top + i * ch + ch / 2 + 4).attr('text-anchor', 'end').attr('style', 'font-family: var(--font); font-size: 12px').text(d));
   svg.selectAll('rect.c').data(d3.cross(d3.range(7), d3.range(24))).join('rect').attr('class', 'c')
     .attr('x', ([w, h]) => ml + h * cw + 1.5).attr('y', ([w]) => top + w * ch + 1.5).attr('width', cw - 3).attr('height', ch - 3).attr('rx', 4)
     .attr('fill', ([w, h]) => get(w, h) ? 'var(--accent)' : 'var(--line)').attr('fill-opacity', ([w, h]) => get(w, h) ? .12 + .88 * Math.sqrt(get(w, h) / max) : .6)
-    .on('mousemove', (ev, [w, h]) => showTip(tip, card, ev, `${DAYS[w]} ${h}:00`, [[null, 'Tokens', tok(get(w, h))]])).on('mouseleave', hideTip(tip));
-  d3.range(0, 24, 3).forEach((h) => svg.append('text').attr('x', ml + h * cw + cw / 2).attr('y', H - 4).attr('text-anchor', 'middle').text(h + ':00'));
+    .on('mousemove', (ev, [w, h]) => showTip(tip, card, ev, `${DAYS[w]}요일 ${h}시`, [[null, '토큰', tok(get(w, h))]])).on('mouseleave', hideTip(tip));
+  d3.range(0, 24, 3).forEach((h) => svg.append('text').attr('x', ml + h * cw + cw / 2).attr('y', H - 4).attr('text-anchor', 'middle').text(h + '시'));
   box.replaceChildren(svg.node());
 }
 
 
 // ---------- input / output / cache mix
-const PARTS = [['input', 'New input', 'var(--s2)'], ['cache_read', 'Cache read', 'var(--accent)'], ['cache_write', 'Cache write', 'var(--s5)'], ['output', 'Output', 'var(--s3)']];
+const PARTS = [['input', '새 입력', 'var(--s2)'], ['cache_read', '캐시 읽기', 'var(--accent)'], ['cache_write', '캐시 쓰기', 'var(--s5)'], ['output', '출력', 'var(--s3)']];
 const priceOf = (m) => (DATA.prices || {})[m];
 function mix() {
   const R = rows(), card = $('mix-card');
@@ -789,7 +813,7 @@ function mix() {
   $('x-out').textContent = inAll ? (100 * T.output / inAll).toFixed(2) : '-';
   const basis = st.unit === 'cost' ? C : T, sum = d3.sum(PARTS, ([k]) => basis[k]) || 1;
   $('x-share').replaceChildren(...PARTS.filter(([k]) => basis[k] > 0).map(([k, , c]) => { const s = el('span'); s.style.flex = String(basis[k]); s.style.background = c; return s; }));
-  const head = el('div', 'm mhead xrow'); head.append(el('span', '', 'Item'), el('span', 'num', 'Tokens'), el('span', 'num', st.unit === 'cost' ? 'Cost share' : 'Share'), el('span', 'num', 'API equivalent'));
+  const head = el('div', 'm mhead xrow'); head.append(el('span', '', '항목'), el('span', 'num', '토큰'), el('span', 'num', st.unit === 'cost' ? '비용 비중' : '비중'), el('span', 'num', 'API 환산'));
   $('x-rows').replaceChildren(head, ...PARTS.filter(([k]) => k !== 'cache_write' || T[k] > 0).map(([k, label, c]) => {
     const row = el('div', 'm xrow'); const n = el('div', 'n'); const i = el('i'); i.style.background = c; n.append(i, el('span', '', label)); n.lastChild.style.fontFamily = 'var(--font)'; n.lastChild.style.fontSize = '14px';
     row.append(n, el('span', 'num', tok(T[k])), el('span', 'num pct', pct(basis[k] / sum)), el('span', 'num', usd(C[k])));
@@ -805,17 +829,17 @@ function mix() {
   const W = box.clientWidth || 400, H = 180, mb = 22, mt = 8, ml = 38;
   const lo = Math.max(0, Math.floor((d3.min(pts, (p) => p.hit ?? 1) * 10)) / 10 - .1);
   const x = d3.scaleTime([days[0], days[days.length - 1]], [ml, W - 6]), y = d3.scaleLinear([lo, 1], [H - mb, mt]);
-  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Daily cache hit rate');
+  const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', '일별 캐시 적중률');
   const ticks = y.ticks(4);
   svg.append('g').selectAll('line').data(ticks).join('line').attr('x1', ml).attr('x2', W).attr('y1', y).attr('y2', y).attr('stroke', 'var(--line)').attr('stroke-dasharray', '2 4');
   svg.append('g').selectAll('text').data(ticks).join('text').attr('x', ml - 8).attr('y', (t) => y(t) + 4).attr('text-anchor', 'end').text((t) => Math.round(t * 100) + '%');
-  if (inAll) { const avg = T.cache_read / inAll; svg.append('line').attr('x1', ml).attr('x2', W).attr('y1', y(avg)).attr('y2', y(avg)).attr('stroke', 'var(--muted)').attr('stroke-dasharray', '4 4'); svg.append('text').attr('x', W - 4).attr('y', y(avg) - 5).attr('text-anchor', 'end').text('Average ' + (avg * 100).toFixed(1) + '%'); }
+  if (inAll) { const avg = T.cache_read / inAll; svg.append('line').attr('x1', ml).attr('x2', W).attr('y1', y(avg)).attr('y2', y(avg)).attr('stroke', 'var(--muted)').attr('stroke-dasharray', '4 4'); svg.append('text').attr('x', W - 4).attr('y', y(avg) - 5).attr('text-anchor', 'end').text('평균 ' + (avg * 100).toFixed(1) + '%'); }
   svg.append('path').attr('d', d3.line().defined((p) => p.hit != null).x((p) => x(p.d)).y((p) => y(p.hit))(pts)).attr('fill', 'none').attr('stroke', 'var(--accent)').attr('stroke-width', 2);
   svg.append('g').selectAll('circle').data(pts.filter((p) => p.hit != null)).join('circle').attr('cx', (p) => x(p.d)).attr('cy', (p) => y(p.hit)).attr('r', days.length > 60 ? 0 : 2.5).attr('fill', 'var(--accent)');
   svg.append('g').selectAll('text').data(x.ticks(Math.max(2, Math.floor(W / 90)))).join('text').attr('x', x).attr('y', H - 5).attr('text-anchor', 'middle').text(md);
   const tip = tipIn(card), dot = svg.append('circle').attr('r', 4.5).attr('fill', 'var(--accent)').attr('stroke', 'var(--card)').attr('stroke-width', 2).attr('opacity', 0);
   svg.append('rect').attr('x', ml).attr('width', W - ml).attr('height', H).attr('fill', 'transparent')
-    .on('mousemove', (ev) => { const [mx] = d3.pointer(ev); const p = pts[Math.max(0, Math.min(pts.length - 1, Math.round(d3.timeDay.count(days[0], x.invert(mx)))))]; if (p.hit == null) { tip.hidden = true; dot.attr('opacity', 0); return; } dot.attr('cx', x(p.d)).attr('cy', y(p.hit)).attr('opacity', 1); showTip(tip, card, ev, `${md(p.d)} (${dayName(p.d)})`, [[null, 'Cache hit rate', (p.hit * 100).toFixed(1) + '%'], [null, 'All input', tok(p.all)]]); })
+    .on('mousemove', (ev) => { const [mx] = d3.pointer(ev); const p = pts[Math.max(0, Math.min(pts.length - 1, Math.round(d3.timeDay.count(days[0], x.invert(mx)))))]; if (p.hit == null) { tip.hidden = true; dot.attr('opacity', 0); return; } dot.attr('cx', x(p.d)).attr('cy', y(p.hit)).attr('opacity', 1); showTip(tip, card, ev, `${md(p.d)} (${dayName(p.d)})`, [[null, '캐시 적중률', (p.hit * 100).toFixed(1) + '%'], [null, '전체 입력', tok(p.all)]]); })
     .on('mouseleave', () => { tip.hidden = true; dot.attr('opacity', 0); });
   box.replaceChildren(svg.node());
 }
@@ -824,10 +848,10 @@ function mix() {
 function setFilter(kind, v) { st[kind] = v; render(); }
 function chips() {
   const list = [];
-  if (st.model) list.push(['model', 'Model', st.model, color(st.model)]);
-  if (st.project) list.push(['project', 'Project', st.project, 'var(--accent)']);
+  if (st.model) list.push(['model', '모델', st.model, color(st.model)]);
+  if (st.project) list.push(['project', '프로젝트', st.project, 'var(--accent)']);
   $('chips').replaceChildren(...list.map(([k, label, v, c]) => {
-    const b = el('button', 'chip'); b.type = 'button'; b.setAttribute('aria-label', `${label} filter ${v} Clear`);
+    const b = el('button', 'chip'); b.type = 'button'; b.setAttribute('aria-label', `${label} 필터 ${v} 지우기`);
     const i = el('i'); i.style.background = c; b.append(i, `${label}: ${v}`, el('b', '', '×')); b.onclick = () => setFilter(k, null); return b;
   }));
   $('hint').hidden = list.length > 0;
@@ -843,21 +867,23 @@ $('themeBtn').onclick = () => {
 addEventListener('hashchange', () => { readHash(); render(); });
 
 function draw() { refreshToolButtons(); writeHash(); segs(); chips(); limitsView(); ratioView(); hero(); hours(); daily(); mix(); cumulative(); monthly(); models(); projects(); }
-function render() { applyView(); if (st.view === 'rank') return; if (!DATA.daily.length) { showEmpty(); return; } $('main').hidden = false; $('empty-all').hidden = true; draw(); }
+function render() { applyView(); if (st.view !== 'main') return; if (!DATA.daily.length) { showEmpty(); return; } $('main').hidden = false; $('empty-all').hidden = true; draw(); }
 function showEmpty() { $('main').hidden = true; $('empty-all').hidden = false; }
 
 // ---------- remaining limits (same numbers as the widget)
 const LNAME = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini' };
-const wl = (s) => s.replace('5시간', '5h').replace('주간', 'Weekly').replace('시간', 'h').replace('일', 'd');
+const wl = (s) => s.replace('Weekly','주간').replace('5h','5시간').replace('Apps','앱');
 const sevOf = (u) => u >= 90 ? 'critical' : u >= 75 ? 'serious' : u >= 50 ? 'warning' : 'good';
 function untilTxt(ts) {
   let s = Math.max(0, Math.floor(ts - Date.now() / 1000)); const d = Math.floor(s / 86400); s %= 86400; const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${Math.max(m, 1)}m`;
+  return d ? `${d}일 ${h}시간` : h ? `${h}시간 ${m}분` : `${Math.max(m, 1)}분`;
 }
 function resetTxt(ts) {
   const t = new Date(ts * 1000);
-  return ts - Date.now() / 1000 >= 86400 ? `Resets in ${untilTxt(ts)} · ${t.getMonth() + 1}/${t.getDate()}(${dayName(t)})` : `Resets in ${untilTxt(ts)}`;
+  return ts - Date.now() / 1000 >= 86400 ? `${untilTxt(ts)} 후 리셋 · ${t.getMonth() + 1}/${t.getDate()}(${dayName(t)})` : `${untilTxt(ts)} 후 리셋`;
 }
+const KO_MESSAGES = {"Model quota": "모델 한도", "Sign in with Google in Gemini CLI": "Gemini CLI에서 Google 로그인을 해주세요", "Run Gemini CLI to refresh your login": "Gemini CLI를 실행해 로그인 토큰을 갱신해주세요", "No quota information in the server response": "서버 응답에 한도 정보가 없습니다", "Model limits are reported by the app. Token usage is available only when the app records token counts.": "모델별 한도는 앱 조회값입니다. 앱에서 토큰 수를 제공하지 않는 대화의 토큰 사용량은 집계할 수 없습니다", "No model quotas in the app response": "앱 응답에 모델 한도 정보가 없습니다", "Start Antigravity to read model quotas. Usage requires token counts in app logs.": "Antigravity를 실행하면 모델별 한도를 조회합니다. 토큰 사용량은 앱 로그에 제공될 때만 집계합니다", "Could not fetch quotas. Check app login and running status.": "한도 조회 실패. 앱 로그인·실행 상태를 확인해주세요", "Web token usage and model quotas cannot be fetched automatically. CLI usage is separate.": "웹 대화의 토큰 사용량·모델별 잔여 한도는 자동 조회할 수 없습니다. CLI 사용량과 별개입니다", "Could not fetch limits for this app": "이 도구의 한도 조회에 실패했습니다", "Update check failed. Check your internet connection.": "업데이트 확인 실패. 인터넷 연결을 확인해주세요", "No ranking server configured": "랭킹 서버가 아직 설정되지 않았어요", "Invite code not found": "그런 초대 코드가 없어요", "Group is full (50 members maximum)": "그룹이 가득 찼어요 (최대 50명)", "Membership expired. Join the group again.": "그룹에서 나가졌어요. 다시 참가해 주세요", "Server error": "서버 오류", "Could not connect to the public ranking server. Update Token Tracker and check your connection.": "랭킹 서버에 연결할 수 없어요", "You have not joined a group yet": "아직 그룹에 참가하지 않았어요", "User-": "쌀숭이-", "Claude Code login credentials were not found": "Claude Code 로그인 정보(.credentials.json)를 찾지 못했어요", "No OAuth token (API key login?)": "OAuth 토큰이 없어요 (API 키 로그인?)", "Sign in again with /login in Claude Code": "로그인이 풀렸어요. Claude Code에서 /login 을 한 번 해 주세요", "Token refresh failed (check your connection)": "토큰 갱신 실패 (인터넷 연결 확인)", "Login expired. Run Claude Code to refresh it.": "로그인 토큰 만료. Claude Code를 한 번 실행하면 갱신돼요", "Rate limited (showing cached values)": "조회가 너무 잦아 잠시 쉬는 중 (마지막 값 표시)", "Authentication failed. Sign in to Claude Code again.": "인증 실패 — Claude Code 재로그인 필요", "Connection failed:": "연결 실패:", "Reset": "리셋됨", "No quota information in Codex logs yet": "Codex 로그에 한도 정보가 아직 없어요", "Last Codex usage ({h}h ago)": "마지막 Codex 사용 기준 ({h}시간 전)", "Last Codex usage ({h // 24}d ago)": "마지막 Codex 사용 기준 ({h // 24}일 전)", "Weekly Opus": "주간 Opus", "Weekly Sonnet": "주간 Sonnet", "Weekly Apps": "주간 앱", "5h": "5시간", "Weekly": "주간", "Limit": "한도", "{m // 1440}d": "{m // 1440}일", "{round(m / 60)}h": "{round(m / 60)}시간"};
+const koMessage = text => KO_MESSAGES[text] || String(text).replace(/Last Codex usage \((\d+)h ago\)/,'마지막 Codex 사용 기준 ($1시간 전)').replace(/Last Codex usage \((\d+)d ago\)/,'마지막 Codex 사용 기준 ($1일 전)');
 let LIMITS = {};
 let SOURCE_SETTINGS = {sources: {}, source_names: {claude:'Claude Code',codex:'Codex',chatgpt:'ChatGPT',gemini:'Gemini CLI',antigravity:'Antigravity',gemini_web:'Gemini Web'}};
 function refreshToolButtons() {
@@ -870,10 +896,38 @@ function refreshToolButtons() {
   }).map(([,name]) => name);
   const tool = $('tool'); tool.replaceChildren();
   for (const name of ['all', ...names]) {
-    const button = el('button', '', name === 'all' ? 'All' : name); button.type='button'; button.dataset.v=name; tool.append(button);
+    const button = el('button', '', name === 'all' ? '전체' : name); button.type='button'; button.dataset.v=name; tool.append(button);
   }
   if (st.tool !== 'all' && !names.includes(st.tool)) st.tool='all';
 }
+
+function settingsView() {
+  const form = $('settingsForm'), widget = SOURCE_SETTINGS.widget || {}, subs = SOURCE_SETTINGS.subscription_usd_month || {};
+  for (const key of ['claude','codex','gemini']) form.elements[key].value = subs[key] || 0;
+  for (const key of ['font','number_font']) form.elements[key].value = widget[key] || '';
+  form.elements.opacity.value = Math.round((widget.opacity || .96) * 100);
+  form.elements.topmost.checked = widget.topmost !== false;
+  form.elements.taskbar.checked = widget.taskbar !== false;
+  form.elements.auto_update.checked = SOURCE_SETTINGS.auto_update !== false;
+}
+function openSettings() { st.view = 'settings'; writeHash(); render(); loadSettings(); scrollTo(0,0); }
+$('settingsBtn').onclick = openSettings;
+$('settingsBack').onclick = () => { st.view='main'; writeHash(); render(); scrollTo(0,0); };
+$('settingsForm').onsubmit = async event => {
+  event.preventDefault(); const form=event.currentTarget;
+  const body={subscription_usd_month:{},widget:{},auto_update:form.elements.auto_update.checked};
+  for (const key of ['claude','codex','gemini']) body.subscription_usd_month[key]=Number(form.elements[key].value);
+  for (const key of ['font','number_font']) body.widget[key]=form.elements[key].value;
+  for (const key of ['topmost','taskbar']) body.widget[key]=form.elements[key].checked;
+  body.widget.opacity=Number(form.elements.opacity.value)/100;
+  $('settingsStatus').textContent='저장 중…';
+  try {
+    const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if (!response.ok) throw new Error('설정을 저장하지 못했습니다');
+    await loadSettings(); await loadRatio(); $('settingsStatus').textContent='저장했습니다. 작업 표시줄·자동 업데이트 변경은 앱을 다시 실행하면 적용됩니다.';
+  } catch(error) { $('settingsStatus').textContent=koMessage(error.message); }
+};
+
 async function loadSettings() {
   try {
     const response = await fetch('/api/settings', {cache:'no-store'});
@@ -884,13 +938,13 @@ async function loadSettings() {
       const label = el('label'); const input = el('input'); input.type = 'checkbox'; input.name = key;
       input.checked = SOURCE_SETTINGS.sources[key] !== false; label.append(input, ' ' + name); form.append(label);
     }
-    refreshToolButtons();
-  } catch (e) { $('status').textContent='Could not load app settings'; }
+    refreshToolButtons(); settingsView();
+  } catch (e) { $('status').textContent='도구 설정을 읽지 못했습니다'; }
 }
 $('sourceForm').onchange = async () => {
   const sources = Object.fromEntries(Array.from($('sourceForm').elements).map(input => [input.name,input.checked]));
   const response = await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sources})});
-  if (!response.ok) { $('status').textContent='Could not save settings'; return; }
+  if (!response.ok) { $('status').textContent='설정 저장 실패'; return; }
   await loadSettings(); await Promise.all([load(),loadLimits(),loadRatio()]);
 };
 function limitsView() {
@@ -905,55 +959,55 @@ function limitsView() {
       if (!a.windows.length) continue;
       const c = el('section', 'card lim'); const h = el('div', 'lim-h'); const dot = el('i'); dot.style.background = `var(--${src})`;
       h.append(dot, el('b', '', name)); if (a.plan) h.append(el('span', 'plan', a.plan));
-      if (a.fetched_at) h.append(el('span', 'asof', tfmt(new Date(a.fetched_at * 1000)) + ' as of'));
+      if (a.fetched_at) h.append(el('span', 'asof', tfmt(new Date(a.fetched_at * 1000)) + ' 기준'));
       c.append(h);
       for (const w of a.windows) {
         const used = Number(w.used_percent), left = 100 - used, sv = sevOf(used);
         const row = el('div', 'lw'); const r = el('div', 'lw-r');
-        r.append(el('span', '', wl(w.label)), el('small', '', w.resets_at ? resetTxt(w.resets_at) : (w.note || '')));
+        r.append(el('span', '', wl(w.label)), el('small', '', w.resets_at ? resetTxt(w.resets_at) : koMessage(w.note || '')));
         const big = el('strong', '', Math.round(left) + '%'); if (used >= 75) big.style.color = `var(--${sv})`; r.append(big);
         const tr = el('div', 'track'); const fill = el('i'); fill.style.width = Math.max(0, Math.min(100, left)) + '%';
         fill.style.background = used < 50 ? `var(--${src})` : `var(--${sv})`; tr.append(fill);
         row.append(r, tr); c.append(row);
       }
-      if (l.message && !/[\uac00-\ud7af]/.test(l.message)) c.append(el('div', 'msg', l.message));
-      if (!a.windows.length && !l.message) c.append(el('div','msg','Loading limits…'));
+      if (l.message) c.append(el('div', 'msg', koMessage(l.message)));
+      if (!a.windows.length && !l.message) c.append(el('div','msg','한도 조회 중…'));
       cards.push(c);
     }
   }
-  box.replaceChildren(...cards); box.hidden = !cards.length;
+  box.replaceChildren(...cards); box.hidden = st.view !== 'main' || !cards.length;
 }
 async function loadLimits() {
   try { const r = await fetch('/api/limits', { cache: 'no-store' }); if (r.ok) { LIMITS = await r.json(); limitsView(); } } catch (e) {}
 }
 
-// ---------- Subscription value
+// ---------- 쌀먹 비율
 const TOOLC = { claude: 'var(--claude)', codex: 'var(--codex)', gemini: 'var(--gemini)' };
 const TOOLN = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' };
-const PLABEL = { day: 'Today', week: 'This week', month: 'This month' };
+const PLABEL = { day: '오늘', week: '이번 주', month: '이번 달' };
 const xfmt = (r) => r == null ? '-' : r >= 100 ? Math.round(r).toString() : r >= 10 ? r.toFixed(1) : r.toFixed(2);
 let RATIO = null;
 function ratioView() {
   const card = $('ratio-card');
   const P = RATIO && RATIO.periods && RATIO.periods[st.rp];
   const any = RATIO && Object.values(RATIO.periods || {}).some((v) => Object.keys(v.tools).length);
-  card.hidden = st.view === 'rank' || !any;
+  card.hidden = st.view !== 'main' || !any;
   if (card.hidden || !P) return;
   document.querySelectorAll('#rperiod button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.rp)));
   $('r-v').textContent = P.ratio == null ? '×-' : '×' + xfmt(P.ratio);
-  $('r-sub').replaceChildren(`${PLABEL[st.rp]} subscription `, el('b', '', usd(P.sub)), 'for ', el('b', '', usd(P.api)), 'API value');
-  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `Excluded due to unknown subscription price: ${P.excluded.map(key => TOOLN[key] || key).join(', ')}. Enter the monthly price below.` : '';
+  $('r-sub').replaceChildren(`${PLABEL[st.rp]} 구독 `, el('b', '', usd(P.sub)), '로 ', el('b', '', usd(P.api)), '어치 사용');
+  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `구독료 미확인으로 합계 배율에서 제외: ${P.excluded.map(key => TOOLN[key] || key).join(', ')}. 아래 구독료 수정에서 입력하세요.` : '';
   const gain = P.api - P.sub, g = $('r-gain');
-  g.textContent = P.sub ? (gain >= 0 ? `${usd(gain)} saved` : `${usd(-gain)} unused`) : 'Unknown subscription price';
+  g.textContent = P.sub ? (gain >= 0 ? `${usd(gain)} 이득` : `${usd(-gain)} 덜 씀`) : '구독료를 알 수 없어요';
   g.className = 'gain' + (gain >= 0 && P.sub ? '' : ' loss');
   const tools = Object.entries(P.tools);
   const mx = (d3.max(tools, ([, t]) => Math.max(t.api, t.sub)) || 1) * 1.08;
   $('r-rows').replaceChildren(...tools.map(([src, t]) => {
     const row = el('div', 'rrow'); const nm = el('div', 'nm'); const top = el('div'); const i = el('i'); i.style.background = TOOLC[src];
     top.append(i, el('b', '', TOOLN[src])); if (t.plan) top.append(el('span', 'plan', t.plan));
-    nm.append(top, el('small', '', t.monthly ? `${t.from === 'config' ? 'Custom price' : 'Plan price'} $${t.monthly}/month` : 'Unknown subscription price · enter below'));
+    nm.append(top, el('small', '', t.monthly ? `${t.from === 'config' ? '직접 넣은 값' : '요금제 가격'} $${t.monthly}/월` : '구독료 모름 · 아래에서 입력'));
     const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (100 * t.api / mx) + '%'; f.style.background = TOOLC[src]; bar.append(f);
-    if (t.sub) { const m = el('em'); m.style.left = (100 * t.sub / mx) + '%'; m.title = 'Subscription (break-even)'; bar.append(m); }
+    if (t.sub) { const m = el('em'); m.style.left = (100 * t.sub / mx) + '%'; m.title = '구독료 (본전)'; bar.append(m); }
     const amt = el('span', 'amt'); amt.append(el('b', '', usd(t.api)), ' / ' + (t.sub ? usd(t.sub) : '-'));
     row.append(nm, bar, amt, el('span', 'x' + (t.ratio == null ? ' dim' : ''), t.ratio == null ? '-' : '×' + xfmt(t.ratio)));
     return row;
@@ -963,10 +1017,7 @@ async function loadRatio() {
   try { const r = await fetch('/api/ratio', { cache: 'no-store' }); if (r.ok) { RATIO = await r.json(); ratioView(); } } catch (e) {}
 }
 $('rperiod').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (b) { st.rp = b.dataset.v; ratioView(); } });
-$('subEdit').onclick = () => {
-  const f = $('subForm'); f.hidden = !f.hidden;
-  if (!f.hidden && RATIO) for (const src of ['claude', 'codex', 'gemini']) { const s = RATIO.subscriptions[src]; f.elements[src].value = s && s.from === 'config' ? s.usd : ''; }
-};
+$('subEdit').onclick = () => openSettings();
 $('subForm').onsubmit = async (e) => {
   e.preventDefault(); const f = e.target; const body = { subscription_usd_month: {} };
   for (const src of ['claude', 'codex', 'gemini']) body.subscription_usd_month[src] = f.elements[src].value === '' ? 0 : Math.max(0, Number(f.elements[src].value));
@@ -974,30 +1025,31 @@ $('subForm').onsubmit = async (e) => {
   f.hidden = true; loadRatio();
 };
 
-// ---------- views: dashboard / Ranking
+// ---------- views: dashboard / 쌀숭이 랭킹
 function applyView() {
-  const rank = st.view === 'rank';
+  const rank = st.view === 'rank', settings = st.view === 'settings', other = rank || settings;
+  $('settings-panel').hidden = !settings;
   $('rank-view').hidden = !rank;
-  $('main').hidden = rank || !DATA.daily.length;
-  $('empty-all').hidden = rank || !!DATA.daily.length;
-  $('limits').hidden = rank || !$('limits').children.length;
-  $('ratio-card').hidden = rank || $('ratio-card').hidden;
+  $('main').hidden = other || !DATA.daily.length;
+  $('empty-all').hidden = other || !!DATA.daily.length;
+  $('limits').hidden = other || !$('limits').children.length;
+  $('ratio-card').hidden = other || $('ratio-card').hidden;
   const b = $('viewBtn');
-  b.lastChild.textContent = rank ? 'Dashboard' : 'Ranking';
+  b.lastChild.textContent = other ? '대시보드' : '랭킹';
   b.querySelector('svg').innerHTML = rank ? '<path d="M10 3 5 8l5 5"/>' : '<path d="M5 14h6M8 11v3M4.5 2h7v3.5a3.5 3.5 0 0 1-7 0zM4.5 3.5H2.5v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2"/>';
-  b.setAttribute('href', rank ? '#' : '#v=rank');
-  document.title = rank ? 'Ranking · Token Tracker' : 'Token Tracker';
+  b.setAttribute('href', other ? '#' : '#v=rank');
+  document.title = settings ? '설정 · 토큰 트래커' : rank ? '쌀숭이 랭킹 · 토큰 트래커' : '토큰 트래커';
 }
 $('viewBtn').onclick = (e) => {
-  e.preventDefault(); st.view = st.view === 'rank' ? 'main' : 'rank'; writeHash(); render();
+  e.preventDefault(); st.view = st.view !== 'main' ? 'main' : 'rank'; writeHash(); render();
   if (st.view === 'rank') loadRanking(); else { scrollTo(0, 0); if (DATA.daily.length) draw(); }
 };
 
-// ---------- Ranking
+// ---------- 쌀숭이 랭킹
 const AVC = ['#6d5bd0', '#0f9473', '#c2508f', '#0b8fb3', '#8f6a4d', '#b39200', '#64748b', '#d4693f'];
 const avColor = (s) => AVC[[...s].reduce((a, c) => (a * 31 + c.codePointAt(0)) >>> 0, 7) % AVC.length];
-const tierOf = (r) => r == null ? null : r >= 5 ? ['Top user', 't-king'] : r >= 2 ? ['Value user', 't-eat'] : r >= 1 ? ['Break-even', 't-even'] : ['Light user', 't-give'];
-const RLABEL = { day: 'Daily', week: 'Weekly', month: 'Monthly' };
+const tierOf = (r) => r == null ? null : r >= 5 ? ['쌀숭이', 't-king'] : r >= 2 ? ['쌀먹', 't-eat'] : r >= 1 ? ['본전', 't-even'] : ['기부천사', 't-give'];
+const RLABEL = { day: '일일', week: '주간', month: '월간' };
 let RANK = null;
 async function post(path, body) {
   const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
@@ -1005,27 +1057,27 @@ async function post(path, body) {
 }
 async function loadRanking() {
   const card = $('rank-card');
-  if (!RANK) card.replaceChildren(el('div', 'empty', 'Loading…'));
+  if (!RANK) card.replaceChildren(el('div', 'empty', '불러오는 중…'));
   try {
     const r = await fetch('/api/ranking?period=' + st.rk, { cache: 'no-store' });
-    RANK = await r.json();
-  } catch (e) { RANK = { error: 'Could not connect to Token Tracker on this PC. Start the app, then refresh.', state: { server: true, joined: true } }; }
+    RANK = await r.json(); if (RANK.error) RANK.error = koMessage(RANK.error);
+  } catch (e) { RANK = { error: '트래커에 연결할 수 없어요', state: { server: true, joined: true } }; }
   rankView();
 }
 function rankView() {
   const card = $('rank-card'), R = RANK || {}, S = R.state || {};
   if (!S.server) {
-    card.replaceChildren(el('h2', '', 'Ranking'), el('div', 'empty', 'The ranking server is unavailable. Update Token Tracker and try again.'));
+    card.replaceChildren(el('h2', '', '쌀숭이 랭킹'), el('div', 'empty', '랭킹 서버가 아직 연결되지 않았어요. 업데이트되면 자동으로 열려요.'));
     return;
   }
-  if (!S.joined) return joinView(card, R.error && R.error !== 'You have not joined a group yet' ? R.error : null);
-  const top = el('div', 'rank-top'); const h = el('div'); h.append(el('h2', '', 'Ranking')); top.append(h);
-  const seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'Ranking period');
+  if (!S.joined) return joinView(card, R.error && R.error !== '아직 그룹에 참가하지 않았어요' ? R.error : null);
+  const top = el('div', 'rank-top'); const h = el('div'); h.append(el('h2', '', '쌀숭이 랭킹')); top.append(h);
+  const seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', '랭킹 기간');
   for (const p of ['day', 'week', 'month']) { const b = el('button', '', RLABEL[p]); b.type = 'button'; b.setAttribute('aria-pressed', String(p === st.rk)); b.onclick = () => { st.rk = p; loadRanking(); }; seg.append(b); }
   top.append(seg);
   if (R.error) { h.querySelector('h2').after(el('small', '', S.group_name || '')); card.replaceChildren(top, el('div', 'err', R.error)); return; }
   const ms = R.members || [];
-  h.firstChild.after(el('small', '', `${R.name || S.group_name} · ${ms.length} members · ${RLABEL[st.rk]} subscription value`));
+  h.firstChild.after(el('small', '', `${R.name || S.group_name} · ${ms.length}명 · ${RLABEL[st.rk]} 쌀먹 비율 순`));
   const best = d3.max(ms, (m) => m.ratio || 0) || 1;
   const list = el('div', 'rank-list');
   let rank = 0;
@@ -1035,10 +1087,10 @@ function rankView() {
     const row = el('div', 'rk' + (m.me ? ' me' : '') + (has ? '' : ' stale'));
     const no = el('span', 'no' + (has && rank <= 3 ? ' top' : '') + (has && rank === 1 ? ' first' : ''), has ? String(rank) : '-');
     const who = el('div', 'who'); const av = el('div', 'av', [...m.nick][0] || '?'); av.style.background = m.me ? 'var(--ink)' : avColor(m.nick);
-    const t = el('div'); t.append(el('b', '', m.nick + (m.me ? ' (me)' : '')), el('small', '', m.plans || 'No plan information'));
+    const t = el('div'); t.append(el('b', '', m.nick + (m.me ? ' (나)' : '')), el('small', '', m.plans || '요금제 정보 없음'));
     who.append(av, t); const tr = tierOf(has ? m.ratio : null); if (tr) who.append(el('span', 'tier ' + tr[1], tr[0]));
     const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (has ? 100 * m.ratio / best : 0) + '%'; f.style.background = rank === 1 && has ? '#c2410c' : m.me ? 'var(--ink)' : 'var(--muted)'; bar.append(f);
-    const amt = el('span', 'amt'); if (has) amt.append(el('b', '', usd(m.api)), ' / ' + usd(m.sub)); else amt.append(m.needs_update ? 'App update required' : 'No records yet');
+    const amt = el('span', 'amt'); if (has) amt.append(el('b', '', usd(m.api)), ' / ' + usd(m.sub)); else amt.append(m.needs_update ? '새 버전 업데이트 필요' : '아직 기록 없음');
     row.append(no, who, bar, amt, el('span', 'x', has ? '×' + xfmt(m.ratio) : ''));
     list.append(row);
   });
@@ -1046,39 +1098,38 @@ function rankView() {
   const ranked = ms.filter((m) => m.ratio != null && m.current);
   const myRank = me && me.ratio != null && me.current ? ranked.indexOf(me) + 1 : null;
   const side = el('aside', 'rank-side');
-  side.append(el('div', '', 'Your rank'));
-  const big = el('div'); big.append(el('span', 'big', myRank ? `#${myRank}` : '-'), ` / ${ranked.length} members`); side.append(big);
-  if (myRank > 1) side.append(el('div', '', `Gap to #1: ×${xfmt(ranked[0].ratio - me.ratio)}`));
+  side.append(el('div', '', '내 순위'));
+  const big = el('div'); big.append(el('span', 'big', myRank ? `${myRank}위` : '-'), ` / ${ranked.length}명`); side.append(big);
+  if (myRank > 1) side.append(el('div', '', `1위까지 배율 ×${xfmt(ranked[0].ratio - me.ratio)} 차이`));
   side.append(el('hr'));
-  const inv = el('div'); inv.append('Invite code '); const code = el('span', 'code', S.code); inv.append(code); side.append(inv);
-  const copy = el('button', 'btn', 'Copy invite code'); copy.type = 'button';
-  copy.onclick = async () => { try { await navigator.clipboard.writeText(S.code); copy.textContent = 'Copied'; } catch (e) { copy.textContent = S.code; } setTimeout(() => { copy.textContent = 'Copy invite code'; }, 1800); };
+  const inv = el('div'); inv.append('초대 코드 '); const code = el('span', 'code', S.code); inv.append(code); side.append(inv);
+  const copy = el('button', 'btn', '초대 코드 복사'); copy.type = 'button';
+  copy.onclick = async () => { try { await navigator.clipboard.writeText(S.code); copy.textContent = '복사했어요'; } catch (e) { copy.textContent = S.code; } setTimeout(() => { copy.textContent = '초대 코드 복사'; }, 1800); };
   side.append(copy, el('hr'));
-  const invite = el('button', 'btn', 'Copy invite link'); invite.type = 'button';
+  const invite = el('button', 'btn', '초대 링크 복사'); invite.type = 'button';
   invite.onclick = async () => {
     const url = S.invite_url || 'https://token-tracker-rank.hihikkul-token-tracker.workers.dev/?invite=' + encodeURIComponent(S.code);
-    try { await navigator.clipboard.writeText(url); invite.textContent = 'Copied'; }
+    try { await navigator.clipboard.writeText(url); invite.textContent = '복사했어요'; }
     catch (e) { invite.textContent = url; }
-    setTimeout(() => { invite.textContent = 'Copy invite link'; }, 1800);
+    setTimeout(() => { invite.textContent = '초대 링크 복사'; }, 1800);
   };
-  side.append(invite, el('div', 'note', 'Friends install Token Tracker and enter this code on their own PC. Your localhost dashboard is private.'));
+  side.append(invite, el('div', 'note', '친구도 트래커를 설치하고 본인 PC에서 참가해야 합니다. 내 로컬 대시보드 주소는 공유할 수 없습니다.'));
   const nf = el('form', 'nickf');
-  const nl = el('label', '', 'Nickname'); const ni = el('input'); ni.name = 'nick'; ni.maxLength = 24; ni.value = S.nick || ''; nl.append(ni);
-  const ns = el('button', 'btn', 'Change nickname'); ns.type = 'submit'; nf.append(nl, ns);
+  const nl = el('label', '', '닉네임'); const ni = el('input'); ni.name = 'nick'; ni.maxLength = 24; ni.value = S.nick || ''; nl.append(ni);
+  const ns = el('button', 'btn', '닉네임 바꾸기'); ns.type = 'submit'; nf.append(nl, ns);
   nf.onsubmit = async (e) => { e.preventDefault(); await post('/api/ranking/nick', { nick: ni.value }); loadRanking(); };
   side.append(nf, el('hr'));
-  side.append(el('b', '', 'Shared with your group'), el('div', '', 'Nickname, plan names, period costs and subscription amounts'), el('div', 'note', 'Conversations, projects and model records are not shared.'));
-  const lv = el('button', 'linkbtn', 'Leave group'); lv.type = 'button';
-  lv.onclick = async () => { if (lv.dataset.sure) { await post('/api/ranking/leave'); RANK = null; loadRanking(); } else { lv.dataset.sure = '1'; lv.textContent = 'Click again to leave the group'; } };
+  side.append(el('b', '', '랭킹에 공유되는 것'), el('div', '', '닉네임, 요금제 이름, 기간별 API 환산 금액과 구독료 몫'), el('div', 'note', '대화 내용, 프로젝트, 모델별 기록은 공유하지 않아요.'));
+  const lv = el('button', 'linkbtn', '그룹 나가기'); lv.type = 'button';
+  lv.onclick = async () => { if (lv.dataset.sure) { await post('/api/ranking/leave'); RANK = null; loadRanking(); } else { lv.dataset.sure = '1'; lv.textContent = '정말 나갈까요? 한 번 더 누르면 나가요'; } };
   side.append(lv);
   const wrap = el('div', 'rank-wrap'); wrap.append(list, side);
-  const lg = el('div', 'legend2'); for (const [n, c, t] of [['Top user', 't-king', '×5 or more'], ['Value user', 't-eat', '×2 or more'], ['Break-even', 't-even', '×1 or more'], ['Light user', 't-give', '×1 below']]) { const sp = el('span'); sp.append(el('span', 'tier ' + c, n), ' ' + t); lg.append(sp); }
+  const lg = el('div', 'legend2'); for (const [n, c, t] of [['쌀숭이', 't-king', '×5 이상'], ['쌀먹', 't-eat', '×2 이상'], ['본전', 't-even', '×1 이상'], ['기부천사', 't-give', '×1 미만']]) { const sp = el('span'); sp.append(el('span', 'tier ' + c, n), ' ' + t); lg.append(sp); }
   card.replaceChildren(top, wrap, lg);
   if (myRank === 1 && ranked.length >= 2) celebrate(S.code, R.period, R.window, me.ratio);
 }
 function joinView(card, error) {
-  const top = el('div', 'rank-top'); const h = el('div'); h.append(el('h2', '', 'Ranking'), el('small', '', 'Compare subscription value with friends')); top.append(h);
-  top.append(el('div', 'note', 'This dashboard runs on your PC. Group rankings connect to the public Cloudflare server.'));
+  const top = el('div', 'rank-top'); const h = el('div'); h.append(el('h2', '', '쌀숭이 랭킹'), el('small', '', '친구들과 쌀먹 비율 겨루기')); top.append(h);
   const forms = el('div', 'rank-forms');
   const mk = (title, fields, label, path) => {
     const f = el('form', 'rank-form'); f.append(el('h3', '', title));
@@ -1086,26 +1137,26 @@ function joinView(card, error) {
     const b = el('button', 'btn primary', label); b.type = 'submit'; f.append(b);
     f.onsubmit = async (e) => {
       e.preventDefault(); b.disabled = true; const body = Object.fromEntries(new FormData(f));
-      let res; try { res = await post(path, body); } catch (err) { res = { error: 'Could not connect to Token Tracker on this PC. Start the app, then refresh.' }; }
+      let res; try { res = await post(path, body); } catch (err) { res = { error: '트래커에 연결할 수 없어요' }; }
       b.disabled = false;
-      if (res.error) { const old = f.querySelector('.err'); if (old) old.remove(); f.append(el('div', 'err', res.error)); return; }
+      if (res.error) { const old = f.querySelector('.err'); if (old) old.remove(); f.append(el('div', 'err', koMessage(res.error))); return; }
       RANK = null; loadRanking();
     };
     return f;
   };
   forms.append(
-    mk('Create a group', [['group_name', 'Group name', 'e.g. Lab friends'], ['nick', 'Your nickname', 'Your display name']], 'Create', '/api/ranking/create'),
-    mk('Join with invite code', [['code', 'Invite code', 'ABCD-EF23'], ['nick', 'Your nickname', 'Your display name']], 'Join group', '/api/ranking/join'),
+    mk('새 그룹 만들기', [['group_name', '그룹 이름', '예: 연구실 쌀숭이들'], ['nick', '내 닉네임', '랭킹에 보일 이름']], '만들기', '/api/ranking/create'),
+    mk('초대 코드로 참가', [['code', '초대 코드', 'ABCD-EF23'], ['nick', '내 닉네임', '랭킹에 보일 이름']], '참가하기', '/api/ranking/join'),
   );
-  const note = el('div', 'note', 'Shared: nickname, plan names, period costs and subscription amounts. Conversations, projects and model records stay on this PC.');
+  const note = el('div', 'note', '랭킹은 공개 Cloudflare 서버에 연결됩니다. 친구도 최신 앱을 설치한 뒤 본인 PC에서 초대 코드를 입력하세요. 공유되는 것: 닉네임, 요금제 이름, 기간별 API 환산 금액과 구독료 몫. 대화 내용, 프로젝트, 모델별 기록은 이 PC 밖으로 나가지 않아요.');
   card.replaceChildren(...[top, error ? el('div', 'err', error) : null, forms, note].filter(Boolean));
 }
 
-// ---------- First-place celebration
+// ---------- 1등 축하: 팡파레 + 꽃가루
 function celebrate(code, period, win, ratio) {
   const key = `tt-party:${code}:${period}:${win}`;
   try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) {}
-  $('party-sub').textContent = `${RLABEL[period]} Value user ×${xfmt(ratio)}`;
+  $('party-sub').textContent = `${RLABEL[period]} 쌀먹 ×${xfmt(ratio)}`;
   $('party').hidden = false; $('partyClose').focus();
   fanfare();
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches) confetti();
@@ -1162,31 +1213,31 @@ async function load(quiet) {
     DATA = { daily: d.daily_detail || [], hours: d.hours_detail || [], prices: d.prices || {} };
     prepare(); render();
     const t = d.meta && d.meta.last_scan;
-    $('status').textContent = t ? `${tfmt(new Date(t * 1000)) } updated` : 'Updated';
+    $('status').textContent = t ? `${tfmt(new Date(t * 1000))} 업데이트` : '업데이트됨';
   } catch (e) {
-    if (!quiet) { $('status').textContent = 'Could not load usage. Click Refresh logs.'; $('empty-all').textContent = 'Usage loading failed'; }
+    if (!quiet) { $('status').textContent = '사용량을 불러오지 못했습니다. 로그 다시 읽기를 눌러주세요'; $('empty-all').textContent = '사용량 로딩 실패'; }
   }
 }
 $('refreshBtn').onclick = async () => {
-  const b = $('refreshBtn'); b.disabled = true; $('status').textContent = 'Reading logs…';
+  const b = $('refreshBtn'); b.disabled = true; $('status').textContent = '다시 읽는 중…';
   try { await fetch('/api/refresh', { method: 'POST' }); } catch (e) {}
   await Promise.all([load(), loadLimits(), loadRatio()]); if (st.view === 'rank') await loadRanking(); b.disabled = false;
 };
 $('updateBtn').onclick = async () => {
-  const button = $('updateBtn'); button.disabled=true; button.textContent='Checking…';
+  const button = $('updateBtn'); button.disabled=true; button.textContent='확인 중…';
   try {
     const response = await fetch('/api/update',{method:'POST'}); const result=await response.json();
-    if (!response.ok) throw new Error(result.error || 'Update check failed');
-    if (!result.latest) $('status').textContent=`Up to date (v${result.current})`;
-    else if (result.mode === 'install') $('status').textContent=`v${result.latest} Updating… The app will restart when finished`;
+    if (!response.ok) throw new Error(result.error || '업데이트 확인 실패');
+    if (!result.latest) $('status').textContent=`최신 버전입니다 (v${result.current})`;
+    else if (result.mode === 'install') $('status').textContent=`v${result.latest} 업데이트 중… 완료되면 다시 시작합니다`;
     else {
-      $('status').replaceChildren(`v${result.latest} available · `);
-      const link=el('a','',result.mode === 'git' ? 'Download installer (git checkout: git pull)' : 'Download new version'); link.href=result.url; link.target='_blank'; $('status').append(link);
+      $('status').replaceChildren(`v${result.latest} 사용 가능 · `);
+      const link=el('a','',result.mode === 'git' ? '설치 파일 다운로드 (개발용 폴더는 git pull)' : '새 버전 다운로드'); link.href=result.url; link.target='_blank'; $('status').append(link);
     }
-  } catch(error) { $('status').textContent=error.message; }
-  finally { button.disabled=false; button.textContent='Check for updates'; }
+  } catch(error) { $('status').textContent=koMessage(error.message); }
+  finally { button.disabled=false; button.textContent='업데이트 확인'; }
 };
-$('empty-all').textContent='Reading usage records…';
+$('empty-all').textContent='사용량 기록을 읽는 중…';
 loadSettings().then(() => { load(); loadLimits(); loadRatio(); applyView(); if (st.view === 'rank') loadRanking(); });
 setInterval(() => { if (!document.hidden) { load(true); loadLimits(); loadRatio(); if (st.view === 'rank') loadRanking(); } }, 60000);
 document.querySelectorAll('.card').forEach((c, i) => { c.classList.add('fade'); c.style.animationDelay = Math.min(i, 8) * 30 + 'ms'; });

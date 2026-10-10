@@ -41,8 +41,9 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 - 게이지 색: 넉넉할 땐 도구 색(Claude 주황, Codex 파랑), 절반 넘게 쓰면 노랑 → 주황(75%) → 빨강(90%)
 - 마우스를 올리면 5h / Weekly 등 모든 한도와 리셋까지 남은 시간이 보여요
 - 드래그로 이동 · 더블클릭으로 대시보드 · 우클릭 메뉴 (Open Dashboard, Refresh Now, Minimize to Taskbar, Always on Top, Quit)
-- **작업 표시줄에도 떠요.** Token Tracker 아이콘에 가장 빠듯한 한도의 남은 %를 보여요. 업데이트하면 기존 바탕화면·시작 메뉴 아이콘도 갱신해요. 끄려면 설정에 `"widget": {"taskbar": false}`.
-- 기존 글꼴 설정을 유지해요 (Calibri를 지정했다면 Calibri). 설정하지 않으면 Windows 기본 글꼴을 사용해요. 앱의 안내 문구는 영어예요.
+- **작업 표시줄에도 떠요.** 각 AI의 가장 빠듯한 한도를 반영한 뒤, 남은 비율이 가장 높은 AI를 아이콘에 표시해요. 모두 소진되면 0%로 표시합니다. 업데이트하면 기존 바탕화면·시작 메뉴 아이콘도 갱신해요.
+- 막대에는 Claude, Codex, Antigravity처럼 짧은 앱 이름만 표시합니다. 주간·모델별 상세 한도는 설명창에서 확인하세요.
+- 기존 글꼴 설정을 유지해요 (Calibri를 지정했다면 Calibri). 위젯·우클릭 메뉴·설명창은 영어, 대시보드는 한국어예요.
 - 연결되지 않은 앱은 위젯·한도 카드에서 숨겨요. 설명창은 위·아래 공간에 맞춰 뜨고, 너무 긴 내용은 스크롤할 수 있어요.
 - Claude 한도는 5분마다 Anthropic에 직접 조회하고, Codex 한도는 Codex가 마지막 응답 때 로그에 남긴 값이에요 (Codex를 쓰지 않는 동안은 갱신되지 않음).
 
@@ -76,7 +77,7 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 - 서버로 가는 건 닉네임, 요금제 이름, 기간별 API 환산 금액과 구독료 몫뿐이에요. 대화 내용, 프로젝트, 모델별 기록은 보내지 않아요. 15분마다 갱신돼요.
 - 공유 서버는 Cloudflare Workers + D1 (`server/`)에서 운영 중이에요. 별도 서버 설치 없이 그룹을 만들거나 초대 코드로 참가하면 됩니다.
 - 서버 주소: https://token-tracker-rank.hihikkul-token-tracker.workers.dev
-- 친구에게는 **Copy invite link**로 복사한 공개 안내 링크를 보내세요. 친구도 트래커를 설치하고 본인 PC의 **Ranking → Join with invite code**에서 참가해요. `127.0.0.1` 대시보드 주소는 친구에게 공유할 수 없어요.
+- 친구에게는 **초대 링크 복사**로 복사한 공개 안내 링크를 보내세요. 친구도 트래커를 설치하고 본인 PC의 **랭킹 → 초대 코드로 참가**에서 참가해요. `127.0.0.1` 대시보드 주소는 친구에게 공유할 수 없어요.
 - 오래된 설정의 localhost 랭킹 주소는 공개 서버로 교정해요. 개발 목적으로 로컬 서버를 쓸 때만 `ranking.allow_local_server: true`를 지정하세요.
 - 별도 서버를 직접 운영하려면 `deploy_server.bat` (Mac은 `deploy_server.command`)로 본인 Cloudflare 계정에 배포할 수 있어요. Node.js와 Cloudflare 로그인이 필요합니다.
 
@@ -97,7 +98,9 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 
 ## 설정
 
-`%LOCALAPPDATA%\TokenTracker\config.json` (처음 실행할 때 생겨요)
+위젯 우클릭 **Settings** 또는 대시보드의 **설정**에서 앱 선택, 월 구독료, 글꼴, 불투명도, 항상 위 표시, 작업 표시줄 표시, 자동 업데이트를 변경하세요. 앱 선택·글꼴·불투명도·항상 위 표시는 바로 적용되며, 작업 표시줄·자동 업데이트 변경은 앱을 다시 실행하면 적용됩니다.
+
+고급 설정 파일은 `%LOCALAPPDATA%\TokenTracker\config.json`입니다 (처음 실행할 때 생겨요).
 
 - `sources`: 앱별 수집·표시 선택 (대시보드에서 변경, 기본 모두 선택)
 - `widget.font`, `widget.number_font`: 글꼴 (비워 두면 Segoe UI Variable)

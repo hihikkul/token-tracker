@@ -34,7 +34,10 @@ def make_handler(engine):
             if u.path == '/api/settings':
                 cfg = paths.load_config()
                 return self._send(200, {'sources': {k: k in enabled(cfg) for k in NAMES},
-                    'source_names': NAMES, 'version': updater.local_version()})
+                    'source_names': NAMES, 'version': updater.local_version(),
+                    'widget': {k: cfg.get('widget', {}).get(k) for k in ('font','number_font','opacity','topmost','taskbar')},
+                    'auto_update': cfg.get('auto_update', True),
+                    'subscription_usd_month': cfg.get('subscription_usd_month', {})})
             if u.path in ("/", "/index.html"):
                 return self._send(200, (WEB / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/d3.v7.min.js":
@@ -137,9 +140,24 @@ def make_handler(engine):
                     cfg['sources'] = {key: value for key, value in selected.items()
                                       if key in NAMES and isinstance(value, bool)}
                 subs = cfg.setdefault("subscription_usd_month", {})
-                for src, v in (b.get("subscription_usd_month") or {}).items():
-                    if src in ("claude", "codex", "gemini") and isinstance(v, (int, float)) and 0 <= v < 10000:
+                prices = b.get("subscription_usd_month")
+                for src, v in (prices if isinstance(prices, dict) else {}).items():
+                    if src in ("claude", "codex", "gemini") and isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v < 10000:
                         subs[src] = v
+                wc = cfg.setdefault('widget', {})
+                incoming = b.get('widget')
+                incoming = incoming if isinstance(incoming, dict) else {}
+                for key in ('topmost', 'taskbar'):
+                    if isinstance(incoming.get(key), bool):
+                        wc[key] = incoming[key]
+                for key in ('font', 'number_font'):
+                    if isinstance(incoming.get(key), str) and len(incoming[key]) <= 80:
+                        wc[key] = incoming[key].strip()
+                opacity = incoming.get('opacity')
+                if isinstance(opacity, (int, float)) and not isinstance(opacity, bool) and .2 <= opacity <= 1:
+                    wc['opacity'] = opacity
+                if isinstance(b.get('auto_update'), bool):
+                    cfg['auto_update'] = b['auto_update']
                 paths.save_config(cfg)
                 engine.poke()
                 ranking._last_sync['t'] = 0
