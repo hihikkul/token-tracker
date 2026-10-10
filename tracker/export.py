@@ -17,7 +17,7 @@ from .limits import all_limits
 from .pricing import cost, price_for
 
 TOK = ("input", "output", "cache_write", "cache_read")
-SRC_NAME = {"claude": "Claude Code", "codex": "Codex", "gemini": "Gemini"}
+from .sources import NAMES as SRC_NAME
 
 
 def _cost(r):
@@ -45,7 +45,7 @@ def _codex_titles():
     return out
 
 
-def build(db):
+def build(db, limits=None):
     """All datasets as {name: rows}; used by --export and by the local dashboard."""
     q = db.query
     lday = "date(ts,'unixepoch','localtime')"
@@ -105,14 +105,14 @@ def build(db):
         s["start"] = datetime.fromtimestamp(s["start"]).strftime("%Y-%m-%d %H:%M")
         s.pop("end")
 
-    limits = []
-    lim = all_limits(db)
+    limit_rows = []
+    lim = all_limits(db) if limits is None else limits
     for src, l in lim.items():
         accts = l.get("accounts") or ([{"plan": l.get("plan"), "windows": l.get("windows", []),
                                         "fetched_at": l.get("fetched_at")}] if l.get("windows") else [])
         for a in accts:
             for w in a["windows"]:
-                limits.append({
+                limit_rows.append({
                     "tool": SRC_NAME[src], "account": a.get("plan") or "이전 기록",
                     "window": w["label"], "used_pct": round(w["used_percent"], 1),
                     "left_pct": round(100 - w["used_percent"], 1),
@@ -141,7 +141,7 @@ def build(db):
     prices = {m: p for m in {r["model"] for r in detail} if (p := price_for(m))}
     for srow in sessions:
         srow["projects"] = srow["project"]
-    return {"daily": daily, "projects": projects, "hours": hours, "sessions": sessions, "limits": limits,
+    return {"daily": daily, "projects": projects, "hours": hours, "sessions": sessions, "limits": limit_rows,
             "daily_detail": detail, "hours_detail": hours_detail, "prices": prices, "limits_raw": _limits_raw(lim)}
 
 

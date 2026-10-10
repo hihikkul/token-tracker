@@ -1,8 +1,8 @@
 """쌀먹 비율 (API-equivalent spend ÷ subscription) and the group ranking client.
 
 Periods follow the local calendar: today, this week (from Monday), this month.
-A period's subscription share is the monthly price × 12/365 per elapsed day, so a
-day, a week and a month are compared on the same daily rate.
+Subscription comparisons use a full paid month, or its fixed 1/30 daily and
+7/30 weekly allocation. Month-to-date usage is never compared with a partial bill.
 
 Subscription price per tool: `subscription_usd_month` in config.json when > 0,
 otherwise the price of the plan the limits lookup reports (Claude Pro, Codex Plus…).
@@ -21,6 +21,7 @@ from datetime import date, datetime, timedelta
 
 from . import paths
 from .pricing import cost
+from .sources import enabled
 
 # Shared ranking service. config.json `ranking.server` overrides this address.
 DEFAULT_SERVER = "https://token-tracker-rank.hihikkul-token-tracker.workers.dev"
@@ -50,6 +51,8 @@ def windows(today=None):
 
 def _plan(limits, src):
     lim = (limits or {}).get(src) or {}
+    if src == 'gemini' and not lim.get('plan'):
+        lim = (limits or {}).get('antigravity') or lim
     if lim.get("accounts"):
         return lim["accounts"][0].get("plan")
     return lim.get("plan")
@@ -59,8 +62,12 @@ def subscriptions(limits, cfg=None):
     """{src: {"usd": float|None, "plan": str|None, "from": "config"|"plan"|None}}"""
     cfg = cfg or paths.load_config()
     manual = cfg.get("subscription_usd_month") or {}
+    selected = {'gemini' if src == 'antigravity' else src for src in enabled(cfg)}
     out = {}
     for src in SOURCES:
+        if src not in selected:
+            out[src] = {'usd': None, 'plan': None, 'from': None}
+            continue
         plan = _plan(limits, src)
         m = manual.get(src)
         if isinstance(m, (int, float)) and m > 0:
@@ -73,16 +80,19 @@ def subscriptions(limits, cfg=None):
     return out
 
 
-def _spend(db, since_ts):
+def _spend(db, since_ts, until_ts=None, cfg=None):
     """{src: API-equivalent USD} for records at or after since_ts."""
     out = {s: 0.0 for s in SOURCES}
+    selected = set(enabled(cfg))
     rows = db.query("SELECT source, model, SUM(input) input, SUM(output) output, SUM(cache_write) cache_write, "
-                    "SUM(cache_read) cache_read FROM records WHERE ts >= ? GROUP BY source, model", (since_ts,))
+                    "SUM(cache_read) cache_read FROM records WHERE ts >= ? AND ts <= ? GROUP BY source, model",
+                    (since_ts, until_ts if until_ts is not None else time.time()))
     for r in rows:
         c = cost(r["model"], input=r["input"] or 0, output=r["output"] or 0,
                  cache_write=r["cache_write"] or 0, cache_read=r["cache_read"] or 0)
-        if c and r["source"] in out:
-            out[r["source"]] += c
+        source = 'gemini' if r['source'] == 'antigravity' else r['source']
+        if c and source in out and r['source'] in selected:
+            out[source] += c
     return out
 
 
@@ -91,11 +101,11 @@ def report(db, limits, cfg=None):
     subs = subscriptions(limits, cfg)
     res = {"subscriptions": subs, "periods": {}}
     for period, (win, start, days) in windows().items():
-        spend = _spend(db, datetime.combine(start, datetime.min.time()).timestamp())
+        spend = _spend(db, datetime.combine(start, datetime.min.time()).timestamp(), cfg=cfg)
         tools, t_api, t_sub = {}, 0.0, 0.0
         for src in SOURCES:
             usd = subs[src]["usd"]
-            share = usd * 12 / 365 * days if usd else 0.0
+            share = usd * {'day': 1 / 30, 'week': 7 / 30, 'month': 1}[period] if usd else 0.0
             api = spend[src]
             if not usd and not api:
                 continue
@@ -104,8 +114,10 @@ def report(db, limits, cfg=None):
             if share:  # a tool without a known price can't be part of the ratio
                 t_api += api
                 t_sub += share
+        excluded = [src for src, tool in tools.items() if tool['api'] and not tool['sub']]
         res["periods"][period] = {"window": win, "days": days, "api": round(t_api, 4), "sub": round(t_sub, 4),
-                                  "ratio": (t_api / t_sub) if t_sub else None, "tools": tools}
+                                  "ratio": (t_api / t_sub) if t_sub else None, "tools": tools,
+                                  'excluded': excluded, 'basis': 'full_period', 'calculation_version': 2}
     return res
 
 
@@ -198,7 +210,7 @@ def sync(db, limits, force=False):
         rep = report(db, limits, cfg)
         plans = " · ".join(f"{NAMES[s]} {t['plan']}" if t.get("plan") else NAMES[s]
                            for s, t in rep["periods"]["month"]["tools"].items() if t["sub"])
-        body = {"nick": r.get("nick") or "", "plans": plans,
+        body = {"nick": r.get("nick") or "", "plans": plans, 'calculation_version': 2,
                 "periods": {p: {"window": v["window"], "api": round(v["api"], 4), "sub": round(v["sub"], 4)}
                             for p, v in rep["periods"].items()}}
         _call("PUT", f"/v1/groups/{r['code']}/score", body, token=r["token"], cfg=cfg)

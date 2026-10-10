@@ -368,6 +368,7 @@ def _gemini_files():
     for sub in root.glob("antigravity*"):
         if sub.is_dir():
             files += list(sub.glob("brain/*/.system_generated/logs/transcript_full.jsonl"))
+            files += list(sub.glob('log/**/*.jsonl'))
     for extra in paths.load_config().get("extra_paths", {}).get("gemini", []):
         p = Path(extra)
         if p.exists():
@@ -416,7 +417,7 @@ def scan_gemini(db, report):
             u = _gemini_usage(d)
             mid = d.get("id") or idx
             rows.append({
-                "uid": f"g:{rel}:{mid}", "source": "gemini", "ts": ts or fallback_ts,
+                "uid": f"g:{rel}:{mid}", "source": 'antigravity' if kind == 'antigravity' else 'gemini', "ts": ts or fallback_ts,
                 "model": model or "gemini", "project": kind if kind == "antigravity"
                 else (path.parent.parent.name[:8] if path.parent.name == "chats" else kind),
                 "session": session, "cache_write": 0, **u,

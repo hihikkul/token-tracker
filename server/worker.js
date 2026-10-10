@@ -118,6 +118,7 @@ export default {
       const now = Date.now();
       const nick = cleanText(body.nick, 24) || me.nick;
       const plans = cleanText(body.plans, 80);
+      const calculationVersion = body.calculation_version === 2 ? 2 : 1;
       const stmts = [env.DB.prepare('UPDATE members SET nick = ?, plans = ?, updated = ? WHERE id = ?').bind(nick, plans, now, me.id)];
       for (const p of PERIODS) {
         const s = body.periods[p];
@@ -125,9 +126,9 @@ export default {
         const api = cleanNum(s.api), sub = cleanNum(s.sub), win = cleanWindow(s.window);
         if (api === null || sub === null || !win) return err(400, `bad ${p}`);
         stmts.push(env.DB.prepare(
-          'INSERT INTO scores (member_id, period, window, api, sub, updated) VALUES (?, ?, ?, ?, ?, ?) ' +
-          'ON CONFLICT(member_id, period) DO UPDATE SET window = excluded.window, api = excluded.api, sub = excluded.sub, updated = excluded.updated',
-        ).bind(me.id, p, win, api, sub, now));
+          'INSERT INTO scores (member_id, period, window, api, sub, updated, calculation_version) VALUES (?, ?, ?, ?, ?, ?, ?) ' +
+          'ON CONFLICT(member_id, period) DO UPDATE SET window = excluded.window, api = excluded.api, sub = excluded.sub, updated = excluded.updated, calculation_version = excluded.calculation_version',
+        ).bind(me.id, p, win, api, sub, now, calculationVersion));
       }
       await env.DB.batch(stmts);
       return json({ ok: true });
@@ -137,16 +138,17 @@ export default {
       const period = PERIODS.includes(url.searchParams.get('period')) ? url.searchParams.get('period') : 'week';
       const win = cleanWindow(url.searchParams.get('window'));
       const { results } = await env.DB.prepare(
-        'SELECT m.id, m.nick, m.plans, m.updated, s.window, s.api, s.sub FROM members m ' +
+        'SELECT m.id, m.nick, m.plans, m.updated, s.window, s.api, s.sub, s.calculation_version FROM members m ' +
         'LEFT JOIN scores s ON s.member_id = m.id AND s.period = ? WHERE m.group_code = ?',
       ).bind(period, code).all();
       const members = results.map((r) => {
-        const current = r.window && (!win || r.window === win);
+        const current = r.window && (!win || r.window === win) && r.calculation_version === 2;
         const api = current ? r.api : 0;
         const sub = current ? r.sub : 0;
         return {
           nick: r.nick, plans: r.plans, me: r.id === me.id, updated: r.updated,
           api, sub, ratio: sub > 0 ? api / sub : null, current: !!current,
+          needs_update: !!r.window && r.calculation_version !== 2,
         };
       });
       members.sort((a, b) => (b.ratio ?? -1) - (a.ratio ?? -1) || b.api - a.api);

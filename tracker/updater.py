@@ -86,6 +86,8 @@ def apply(expected):
                 dst = paths.APP_ROOT / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
+    from .shortcuts import refresh_existing
+    refresh_existing()
 
 
 def restart():

@@ -260,9 +260,23 @@ def codex_limits(db):
 
 
 def all_limits(db, force=False):
-    return {
-        "claude": fetch_claude(db, force=force),
-        "codex": codex_limits(db),
-        "gemini": {"source": "gemini", "windows": [], "status": "unsupported",
-                   "message": "Gemini는 한도 조회 경로가 없어요"},
+    from .sources import enabled
+    from .google_limits import fetch
+    providers = {
+        'claude': lambda: fetch_claude(db, force=force),
+        'codex': lambda: codex_limits(db),
+        'gemini': lambda: fetch(db, 'gemini', force),
+        'antigravity': lambda: fetch(db, 'antigravity', force),
     }
+    out = {}
+    for source in enabled():
+        try:
+            if source in providers:
+                out[source] = providers[source]()
+            else:
+                out[source] = {'source': source, 'windows': [], 'status': 'unsupported',
+                    'message': '웹 대화의 토큰 사용량·모델별 잔여 한도는 자동 조회할 수 없습니다. CLI 사용량과 별개입니다'}
+        except Exception:
+            out[source] = {'source': source, 'windows': [], 'status': 'error',
+                           'message': '이 도구의 한도 조회에 실패했습니다'}
+    return out

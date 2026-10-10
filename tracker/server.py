@@ -4,7 +4,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import paths, ranking, stats
+from . import paths, ranking, stats, updater
+from .sources import NAMES, enabled
 from .limits import all_limits
 
 WEB = paths.APP_DIR / "web"
@@ -30,6 +31,10 @@ def make_handler(engine):
         def do_GET(self):
             u = urlparse(self.path)
             q = parse_qs(u.query)
+            if u.path == '/api/settings':
+                cfg = paths.load_config()
+                return self._send(200, {'sources': {k: k in enabled(cfg) for k in NAMES},
+                    'source_names': NAMES, 'version': updater.local_version()})
             if u.path in ("/", "/index.html"):
                 return self._send(200, (WEB / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/d3.v7.min.js":
@@ -51,7 +56,11 @@ def make_handler(engine):
                 return self._send(200, (paths.APP_DIR / "assets" / "token-tracker.png").read_bytes(), "image/png")
             if u.path == "/api/data":
                 from .export import build
-                data = build(engine.db)
+                data = build(engine.db, limits=engine.snapshot.get('limits') or {})
+                selected = set(enabled())
+                names = {NAMES[key] for key in selected}
+                for key in ('daily', 'daily_detail', 'hours_detail'):
+                    data[key] = [row for row in data[key] if row['tool'] in names]
                 data["meta"] = {"last_scan": engine.snapshot.get("updated"),
                                 "coverage": stats.coverage(engine.db),
                                 "artifact_url": paths.load_config().get("artifact_url")}
@@ -86,6 +95,16 @@ def make_handler(engine):
             path = urlparse(self.path).path
             if path.startswith("/api/") and self.headers.get("Origin") not in (None, f"http://{self.headers.get('Host')}"):
                 return self._send(403, {"error": "forbidden"})  # only the dashboard itself may change settings
+            if path == '/api/update':
+                try:
+                    latest = updater.check()
+                    mode = 'download' if updater.is_frozen() else 'git' if updater.is_git_checkout() else 'install'
+                    if latest and mode == 'install' and getattr(engine, 'update_callback', None):
+                        engine.update_callback()
+                    return self._send(200, {'current': updater.local_version(), 'latest': latest,
+                        'mode': mode, 'url': 'https://github.com/hihikkul/token-tracker/releases/latest'})
+                except Exception:
+                    return self._send(503, {'error': '업데이트 확인 실패. 인터넷 연결을 확인해주세요'})
             if path.startswith("/api/ranking/"):
                 b = self._body()
                 nick = str(b.get("nick") or "").strip()[:24]
@@ -113,11 +132,17 @@ def make_handler(engine):
             if path == "/api/settings":
                 b = self._body()
                 cfg = paths.load_config()
+                selected = b.get('sources')
+                if isinstance(selected, dict):
+                    cfg['sources'] = {key: value for key, value in selected.items()
+                                      if key in NAMES and isinstance(value, bool)}
                 subs = cfg.setdefault("subscription_usd_month", {})
                 for src, v in (b.get("subscription_usd_month") or {}).items():
                     if src in ("claude", "codex", "gemini") and isinstance(v, (int, float)) and 0 <= v < 10000:
                         subs[src] = v
                 paths.save_config(cfg)
+                engine.poke()
+                ranking._last_sync['t'] = 0
                 return self._send(200, {"ok": True})
             if urlparse(self.path).path == "/api/refresh":
                 snap = engine.refresh(force_limits=True)

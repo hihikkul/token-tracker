@@ -107,7 +107,6 @@ def main():
         return
 
     engine = Engine()
-    engine.refresh()
     engine.start()
 
     use_widget = not a.dashboard

@@ -15,11 +15,16 @@ class Engine:
         self.cfg = paths.load_config()
         self.snapshot = {"limits": {}, "today": {}, "updated": 0, "scan": {}}
         self.lock = threading.Lock()
+        self._refresh_lock = threading.Lock()
         self._wake = threading.Event()
         self._stop = threading.Event()
         self.listeners = []
 
     def refresh(self, force_limits=False):
+        with self._refresh_lock:
+            return self._refresh(force_limits)
+
+    def _refresh(self, force_limits=False):
         try:
             scan = scan_all(self.db)
         except Exception:

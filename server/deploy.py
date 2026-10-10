@@ -60,6 +60,8 @@ def main():
 
     if wr("d1", "execute", NAME, "--remote", "--file=schema.sql", "--yes").returncode:
         return 1
+    if wr('d1', 'migrations', 'apply', NAME, '--remote').returncode:
+        return 1
     r = wr("deploy", capture=True)
     print(r.stdout[-1500:])
     m = re.search(r"https://[\w.-]+\.workers\.dev", r.stdout + r.stderr)

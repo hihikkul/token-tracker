@@ -20,6 +20,7 @@
   --s1: var(--accent); --s2: #6d5bd0; --s3: #0f9473; --s4: #c2508f; --s5: #b39200; --s6: #64748b; --s7: #0b8fb3; --s8: #8f6a4d; --s9: #b4b4ae;
   --c1: #d4693f; --c2: #eba07a; --c3: #a8502e;
   --claude: #d9622b; --codex: #2f6fdb; --gemini: #128a62;
+  --antigravity: var(--gemini); --chatgpt: var(--codex); --gemini_web: var(--gemini);
   --good: #1f9d55; --warning: #c98a00; --serious: #e0662f; --critical: #d63a3a; --track: #eeeeea;
   --font: Calibri, "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
   --mono: "Cascadia Mono", Consolas, "SF Mono", ui-monospace, monospace;
@@ -299,6 +300,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
     <div class="tools">
       <span class="tag" id="status" aria-live="polite">불러오는 중…</span>
       <a class="btn" id="viewBtn" href="#v=rank"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 14h6M8 11v3M4.5 2h7v3.5a3.5 3.5 0 0 1-7 0zM4.5 3.5H2.5v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2"/></svg><span>랭킹</span></a>
+      <button class="btn" id="updateBtn" type="button">업데이트 확인</button>
       <button class="icon" id="refreshBtn" type="button" aria-label="로그 다시 읽기">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
       </button>
@@ -307,6 +309,12 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
       </button>
     </div>
   </header>
+
+  <details class="card" style="padding:14px 20px;margin-bottom:16px">
+    <summary>표시할 도구 선택</summary>
+    <form id="sourceForm" style="display:flex;flex-wrap:wrap;gap:16px;margin-top:12px"></form>
+    <p class="note">CLI·앱·웹은 각각 별도 항목입니다. 자동 조회가 불가능한 값은 조회 불가로 표시합니다.</p>
+  </details>
 
   <section class="limits" id="limits" aria-label="남은 한도" hidden></section>
 
@@ -318,12 +326,13 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
       <div class="ratio-v" id="r-v">×0</div>
       <div class="sub" id="r-sub"></div>
       <div class="gain" id="r-gain"></div>
-      <div class="note">같은 토큰을 API 정가로 썼다면 냈을 금액 ÷ 그 기간만큼의 구독료예요. 구독료는 하루 단위(월 × 12 / 365)로 나눠요.</div>
+      <div class="note">API 환산 비용 ÷ 구독료. 이번 달은 월 구독료 전액, 오늘은 월 구독료 / 30, 이번 주는 월 구독료 × 7 / 30과 비교합니다. 구독 결제일 기준의 롤링 사용량이 아닙니다.</div>
+      <div class="note" id="ratio-excluded"></div>
     </div>
     <div class="ratio-r">
       <div class="rrow rh"><span>도구 · 요금제</span><span>API 환산 (세로선 = 구독료, 본전)</span><span style="text-align:right">환산 / 구독</span><span style="text-align:right">배율</span></div>
       <div id="r-rows"></div>
-      <div class="rfoot"><span>구독료는 요금제에서 자동으로 정하고, 직접 넣은 값이 있으면 그걸 써요. Gemini는 요금제를 읽을 수 없어요.</span><button class="linkbtn" id="subEdit" type="button">구독료 수정</button></div>
+      <div class="rfoot"><span>감지한 요금제 가격을 사용합니다. 자동 판별이 안 되는 구독료는 직접 입력하세요. Codex·ChatGPT, Gemini CLI·Antigravity·Gemini 웹은 같은 구독료를 중복 합산하지 않습니다.</span><button class="linkbtn" id="subEdit" type="button">구독료 수정</button></div>
       <form class="subform" id="subForm" hidden>
         <label>Claude ($/월)<input name="claude" type="number" min="0" step="1" placeholder="자동"></label>
         <label>Codex ($/월)<input name="codex" type="number" min="0" step="1" placeholder="자동"></label>
@@ -447,7 +456,7 @@ function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   if (['7', '30', '90', 'all'].includes(p.get('r'))) st.range = p.get('r');
   if (['tokens', 'cost'].includes(p.get('u'))) st.unit = p.get('u');
-  if (['all', 'Claude Code', 'Codex'].includes(p.get('t'))) st.tool = p.get('t');
+  if (['all', 'Claude Code', 'Codex', 'ChatGPT', 'Gemini CLI', 'Antigravity', 'Gemini 웹'].includes(p.get('t'))) st.tool = p.get('t');
   st.model = p.get('m'); st.project = p.get('p');
   st.view = p.get('v') === 'rank' ? 'rank' : 'main';
 }
@@ -850,18 +859,43 @@ function resetTxt(ts) {
   return ts - Date.now() / 1000 >= 86400 ? `Resets in ${untilTxt(ts)} · ${t.getMonth() + 1}/${t.getDate()}(${dayName(t)})` : `Resets in ${untilTxt(ts)}`;
 }
 let LIMITS = {};
+let SOURCE_SETTINGS = {sources: {}, source_names: {claude:'Claude Code',codex:'Codex',chatgpt:'ChatGPT',gemini:'Gemini CLI',antigravity:'Antigravity',gemini_web:'Gemini 웹'}};
+async function loadSettings() {
+  try {
+    const response = await fetch('/api/settings', {cache:'no-store'});
+    if (!response.ok) return;
+    SOURCE_SETTINGS = await response.json();
+    const form = $('sourceForm'); form.replaceChildren();
+    for (const [key, name] of Object.entries(SOURCE_SETTINGS.source_names)) {
+      const label = el('label'); const input = el('input'); input.type = 'checkbox'; input.name = key;
+      input.checked = SOURCE_SETTINGS.sources[key] !== false; label.append(input, ' ' + name); form.append(label);
+    }
+    const tool = $('tool'); tool.replaceChildren();
+    for (const name of ['all', ...Object.entries(SOURCE_SETTINGS.source_names).filter(([key]) => SOURCE_SETTINGS.sources[key] !== false).map(([,name]) => name)]) {
+      const button = el('button', '', name === 'all' ? '전체' : name); button.type='button'; button.dataset.v=name; tool.append(button);
+    }
+    if (st.tool !== 'all' && !Array.from(tool.children).some(b => b.dataset.v === st.tool)) st.tool='all';
+  } catch (e) { $('status').textContent='도구 설정을 읽지 못했습니다'; }
+}
+$('sourceForm').onchange = async () => {
+  const sources = Object.fromEntries(Array.from($('sourceForm').elements).map(input => [input.name,input.checked]));
+  const response = await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sources})});
+  if (!response.ok) { $('status').textContent='설정 저장 실패'; return; }
+  await loadSettings(); await Promise.all([load(),loadLimits(),loadRatio()]);
+};
 function limitsView() {
   const box = $('limits'); const cards = [];
-  for (const src of ['claude', 'codex', 'gemini']) {
+  for (const [src, name] of Object.entries(SOURCE_SETTINGS.source_names)) {
+    if (SOURCE_SETTINGS.sources[src] === false) continue;
     const l = LIMITS[src] || {};
-    const accts = l.accounts && l.accounts.length ? l.accounts : (l.windows && l.windows.length ? [{ plan: l.plan, windows: l.windows, fetched_at: l.fetched_at }] : []);
-    if (st.tool !== 'all' && LNAME[src] !== st.tool && !(src === 'claude' && st.tool === 'Claude Code')) continue;
+    const accts = l.accounts && l.accounts.length ? l.accounts : [{ plan: l.plan, windows: l.windows || [], fetched_at: l.fetched_at }];
+    if (st.tool !== 'all' && name !== st.tool) continue;
     for (const a of accts) {
       const c = el('section', 'card lim'); const h = el('div', 'lim-h'); const dot = el('i'); dot.style.background = `var(--${src})`;
-      h.append(dot, el('b', '', LNAME[src])); if (a.plan) h.append(el('span', 'plan', a.plan));
+      h.append(dot, el('b', '', name)); if (a.plan) h.append(el('span', 'plan', a.plan));
       if (a.fetched_at) h.append(el('span', 'asof', tfmt(new Date(a.fetched_at * 1000)) + ' 기준'));
       c.append(h);
-      for (const w of a.windows.slice(0, 3)) {
+      for (const w of a.windows) {
         const used = Number(w.used_percent), left = 100 - used, sv = sevOf(used);
         const row = el('div', 'lw'); const r = el('div', 'lw-r');
         r.append(el('span', '', wl(w.label)), el('small', '', w.resets_at ? resetTxt(w.resets_at) : (w.note || '')));
@@ -870,7 +904,8 @@ function limitsView() {
         fill.style.background = used < 50 ? `var(--${src})` : `var(--${sv})`; tr.append(fill);
         row.append(r, tr); c.append(row);
       }
-      if (['rate_limited', 'offline', 'auth', 'expired', 'error'].includes(l.status) && l.message) c.append(el('div', 'msg', l.message));
+      if (l.message) c.append(el('div', 'msg', l.message));
+      if (!a.windows.length && !l.message) c.append(el('div','msg','한도 조회 중…'));
       cards.push(c);
     }
   }
@@ -895,6 +930,7 @@ function ratioView() {
   document.querySelectorAll('#rperiod button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.rp)));
   $('r-v').textContent = P.ratio == null ? '×-' : '×' + xfmt(P.ratio);
   $('r-sub').replaceChildren(`${PLABEL[st.rp]} 구독 `, el('b', '', usd(P.sub)), '로 ', el('b', '', usd(P.api)), '어치 사용');
+  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `구독료 미확인으로 합계 배율에서 제외: ${P.excluded.map(key => TOOLN[key] || key).join(', ')}. 아래 구독료 수정에서 입력하세요.` : '';
   const gain = P.api - P.sub, g = $('r-gain');
   g.textContent = P.sub ? (gain >= 0 ? `${usd(gain)} 이득` : `${usd(-gain)} 덜 씀`) : '구독료를 알 수 없어요';
   g.className = 'gain' + (gain >= 0 && P.sub ? '' : ' loss');
@@ -990,7 +1026,7 @@ function rankView() {
     const t = el('div'); t.append(el('b', '', m.nick + (m.me ? ' (나)' : '')), el('small', '', m.plans || '요금제 정보 없음'));
     who.append(av, t); const tr = tierOf(has ? m.ratio : null); if (tr) who.append(el('span', 'tier ' + tr[1], tr[0]));
     const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (has ? 100 * m.ratio / best : 0) + '%'; f.style.background = rank === 1 && has ? '#c2410c' : m.me ? 'var(--ink)' : 'var(--muted)'; bar.append(f);
-    const amt = el('span', 'amt'); if (has) amt.append(el('b', '', usd(m.api)), ' / ' + usd(m.sub)); else amt.append('아직 기록 없음');
+    const amt = el('span', 'amt'); if (has) amt.append(el('b', '', usd(m.api)), ' / ' + usd(m.sub)); else amt.append(m.needs_update ? '새 버전 업데이트 필요' : '아직 기록 없음');
     row.append(no, who, bar, amt, el('span', 'x', has ? '×' + xfmt(m.ratio) : ''));
     list.append(row);
   });
@@ -1107,7 +1143,7 @@ async function load(quiet) {
     const t = d.meta && d.meta.last_scan;
     $('status').textContent = t ? `${tfmt(new Date(t * 1000))} 업데이트` : '업데이트됨';
   } catch (e) {
-    if (!quiet) $('status').textContent = '트래커에 연결할 수 없어요';
+    if (!quiet) { $('status').textContent = '사용량을 불러오지 못했습니다. 로그 다시 읽기를 눌러주세요'; $('empty-all').textContent = '사용량 로딩 실패'; }
   }
 }
 $('refreshBtn').onclick = async () => {
@@ -1115,7 +1151,22 @@ $('refreshBtn').onclick = async () => {
   try { await fetch('/api/refresh', { method: 'POST' }); } catch (e) {}
   await Promise.all([load(), loadLimits(), loadRatio()]); if (st.view === 'rank') await loadRanking(); b.disabled = false;
 };
-load(); loadLimits(); loadRatio(); applyView(); if (st.view === 'rank') loadRanking();
+$('updateBtn').onclick = async () => {
+  const button = $('updateBtn'); button.disabled=true; button.textContent='확인 중…';
+  try {
+    const response = await fetch('/api/update',{method:'POST'}); const result=await response.json();
+    if (!response.ok) throw new Error(result.error || '업데이트 확인 실패');
+    if (!result.latest) $('status').textContent=`최신 버전입니다 (v${result.current})`;
+    else if (result.mode === 'install') $('status').textContent=`v${result.latest} 업데이트 중… 완료되면 다시 시작합니다`;
+    else {
+      $('status').replaceChildren(`v${result.latest} 사용 가능 · `);
+      const link=el('a','',result.mode === 'git' ? '설치 파일 다운로드 (개발용 폴더는 git pull)' : '새 버전 다운로드'); link.href=result.url; link.target='_blank'; $('status').append(link);
+    }
+  } catch(error) { $('status').textContent=error.message; }
+  finally { button.disabled=false; button.textContent='업데이트 확인'; }
+};
+$('empty-all').textContent='사용량 기록을 읽는 중…';
+loadSettings().then(() => { load(); loadLimits(); loadRatio(); applyView(); if (st.view === 'rank') loadRanking(); });
 setInterval(() => { if (!document.hidden) { load(true); loadLimits(); loadRatio(); if (st.view === 'rank') loadRanking(); } }, 60000);
 document.querySelectorAll('.card').forEach((c, i) => { c.classList.add('fade'); c.style.animationDelay = Math.min(i, 8) * 30 + 'ms'; });
 let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });

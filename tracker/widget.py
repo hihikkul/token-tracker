@@ -17,15 +17,16 @@ import tkinter.font as tkfont
 import webbrowser
 
 from . import icon, paths, updater
+from .sources import NAMES, enabled
 
 C = {
     "bg": "#141416", "edge": "#2e2e33", "ink": "#f4f4f5", "ink2": "#a1a1aa", "muted": "#6b6b73",
     "track": "#2e2e33", "pill": "#26262b", "tip": "#1c1c1f", "menu_hi": "#2b2b30",
     "claude": "#e8794a", "codex": "#5b9cf5", "gemini": "#34c08b",
+    "antigravity": "#34c08b", "chatgpt": "#5b9cf5", "gemini_web": "#34c08b",
     "good": "#3fb950", "warning": "#e3b341", "serious": "#f0883e", "critical": "#f85149",
 }
-NAMES = {"claude": "Claude Code", "codex": "Codex", "gemini": "Gemini"}
-SHORT = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
+SHORT = {**NAMES, 'claude': 'Claude', 'gemini': 'Gemini CLI'}
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 STATUS = {
     "no_credentials": "Not signed in on this PC",
@@ -121,7 +122,11 @@ class Win:
     @staticmethod
     def hwnd(root):
         import ctypes
-        return ctypes.windll.user32.GetParent(root.winfo_id())
+        from ctypes import wintypes
+        get_parent = ctypes.windll.user32.GetParent
+        get_parent.argtypes = [wintypes.HWND]
+        get_parent.restype = wintypes.HWND
+        return get_parent(root.winfo_id())
 
     @classmethod
     def app_id(cls, name="hihikkul.token-tracker"):
@@ -133,6 +138,37 @@ class Win:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(name)
         except (AttributeError, OSError):
             pass
+
+    @classmethod
+    def set_icon(cls, root, filename):
+        if not cls.ok:
+            return
+        import ctypes
+        from ctypes import wintypes
+        user = ctypes.windll.user32
+        user.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR,
+                                   wintypes.UINT, ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        user.LoadImageW.restype = wintypes.HANDLE
+        user.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        user.SendMessageW.restype = wintypes.LPARAM
+        user.GetParent.argtypes = [wintypes.HWND]
+        user.GetParent.restype = wintypes.HWND
+        user.DestroyIcon.argtypes = [wintypes.HANDLE]
+        user.DestroyIcon.restype = wintypes.BOOL
+        handles = [user.LoadImageW(None, str(filename), 1, size, size, 0x10) for size in (16, 32)]
+        if not all(handles):
+            for handle in handles:
+                if handle:
+                    user.DestroyIcon(handle)
+            return
+        for hwnd in (root.winfo_id(), user.GetParent(root.winfo_id())):
+            if hwnd:
+                for kind, handle in enumerate(handles):
+                    user.SendMessageW(hwnd, 0x80, kind, handle)  # WM_SETICON small / large
+        old = getattr(root, '_native_icons', [])
+        root._native_icons = handles
+        for handle in old:
+            user.DestroyIcon(handle)
 
     @classmethod
     def dpi_aware(cls):
@@ -193,7 +229,8 @@ class Widget:
         self.url = dashboard_url
         self.cfg = paths.load_config()
         wc = self.cfg.setdefault("widget", {})
-        self.show = wc.get("show") or ["claude", "codex"]
+        self.show = enabled(self.cfg)
+        self._source_selection = tuple(self.show)
         self.taskbar = bool(wc.get("taskbar", True)) and Win.ok       # Windows taskbar button
         self.live_icon = bool(wc.get("taskbar", True)) and (Win.ok or MAC)  # gauge on the taskbar / Dock icon
         Win.dpi_aware()
@@ -202,7 +239,8 @@ class Widget:
         self.root = tk.Tk()
         global FONT, NUM_FONT
         FONT, NUM_FONT = pick_fonts(self.root, wc.get("font"), wc.get("number_font"))
-        self.root.title("Usage Limits")
+        self.root.title("Token Tracker")
+        self.engine.update_callback = lambda: self.root.after(0, lambda: self._update(manual=True))
         try:
             self.root.iconbitmap(default=str(paths.APP_ROOT / "assets" / "token-tracker.ico"))
         except (tk.TclError, AttributeError):
@@ -236,6 +274,7 @@ class Widget:
         Win.round_corners(self.root, C["edge"])
         if self.taskbar:
             Win.show_in_taskbar(self.root)
+            self.root.after(100, self._restore_icon)
             self.root.bind("<Map>", self._on_map)
         self.root.bind("<Enter>", self._hover_in)
         self.root.bind("<Leave>", self._hover_out)
@@ -249,7 +288,7 @@ class Widget:
         w = self.root.winfo_reqwidth()
         x = wc.get("x") if wc.get("x") is not None else sw - w - 24
         y = wc.get("y") if wc.get("y") is not None else sh - 64 - H
-        x = max(0, min(int(x), sw - 40))   # keep it on screen after a resolution change
+        x = max(0, min(int(x), max(0, sw - w)))
         y = max(0, min(int(y), sh - 20))
         self.root.geometry(f"+{x}+{y}")
 
@@ -262,6 +301,7 @@ class Widget:
         if self.cfg.get("artifact_url"):
             m.add_command(label="Open Artifact Dashboard", command=lambda: webbrowser.open(self.cfg["artifact_url"]))
         m.add_command(label="Refresh Now", command=self.refresh)
+        m.add_command(label="Check for Updates", command=lambda: self._update(manual=True))
         if self.taskbar:
             m.add_command(label="Minimize to Taskbar", command=self.minimize)
         self._top = tk.BooleanVar(value=bool(self.root.attributes("-topmost")))
@@ -316,9 +356,15 @@ class Widget:
         self.root.iconify()
 
     def _on_map(self, e):
+        if e.widget is self.root:
+            self.root.after(100, self._restore_icon)
         if e.widget is self.root and not self.root.overrideredirect() and self.root.state() == "normal":
             self.root.overrideredirect(True)
             self.root.after(10, lambda: (Win.show_in_taskbar(self.root), Win.round_corners(self.root, C["edge"])))
+
+    def _restore_icon(self):
+        self._icon_key = object()
+        self._taskbar_status(self.engine.snapshot.get('limits') or {})
 
     def toggle_topmost(self):
         v = bool(self._top.get())
@@ -343,12 +389,23 @@ class Widget:
         self.root.after(int(hours * 3600 * 1000), self._auto_update)
 
     def _update(self, manual):
+        if getattr(self, '_updating', False):
+            return
         if updater.is_frozen():
+            self._updating = True
+            if manual:
+                self._note('Checking…', 0)
             def check():
                 try:
                     new = updater.check()
                 except Exception:
+                    self._updating = False
+                    if manual:
+                        self.root.after(0, lambda: self._note('Update check failed', 10000))
                     return
+                self._updating = False
+                if not new and manual:
+                    self.root.after(0, lambda: self._note(f'Up to date (v{updater.local_version()})'))
                 if new and not getattr(self, "_offered", None):
                     self._offered = new
                     self.root.after(0, lambda: (
@@ -362,6 +419,7 @@ class Widget:
             return
         if manual:
             self._note("Checking…", 0)
+        self._updating = True
 
         def work():
             try:
@@ -377,6 +435,8 @@ class Widget:
                 if manual:
                     msg = str(e) or e.__class__.__name__
                     self.root.after(0, lambda: self._note(f"Update failed: {msg[:40]}", 10000))
+            finally:
+                self._updating = False
         threading.Thread(target=work, daemon=True).start()
 
     def _restart(self):
@@ -407,11 +467,17 @@ class Widget:
         if not accts:
             return None
         wins = accts[0][1]
-        return next((w for w in wins if is_5h(w)), wins[0] if wins else None)
+        # The tightest applicable quota limits use, even if 5h is still available.
+        return max(wins, key=lambda w: float(w.get('used_percent') or 0)) if wins else None
 
     # ------------------------------------------------------------------ draw
     def _tick(self):
         snap = self.engine.snapshot
+        selected = tuple(enabled())
+        if selected != self._source_selection:
+            self._source_selection = selected
+            self.show = list(selected)
+            self._last_draw = -1
         minute = int(time.time() // 60)
         if snap.get("updated", 0) != self._last_draw or minute != self._last_min:
             self._draw()
@@ -438,7 +504,7 @@ class Widget:
         strut.pack(side="left")
         self._bind_drag(strut)
         first = True
-        for src in ("claude", "codex", "gemini"):
+        for src in NAMES:
             if src not in self.show:
                 continue
             if not first:
@@ -453,7 +519,7 @@ class Widget:
             else:
                 ring = self._ring((100 - used) / 100, ring_color(src, used))
             parts = [tk.Label(self.bar, image=ring, bg=C["bg"]),
-                     tk.Label(self.bar, text=SHORT[src], bg=C["bg"], fg=C["ink2"], font=(FONT, 10)),
+                     tk.Label(self.bar, text=SHORT[src] + (' ' + wlabel(w['label']) if w else ''), bg=C["bg"], fg=C["ink2"], font=(FONT, 10)),
                      tk.Label(self.bar, text="—" if used is None else f"{100 - used:.0f}%", bg=C["bg"],
                               fg=C["muted"] if used is None else num_color(used), font=(NUM_FONT, 11, "bold"))]
             parts[0].pack(side="left", pady=(0, 0))
@@ -462,6 +528,9 @@ class Widget:
             for p in parts:
                 self._bind_drag(p)
         self.root.update_idletasks()
+        width = self.root.winfo_reqwidth()
+        if self.root.winfo_x() + width > self.root.winfo_screenwidth():
+            self.root.geometry(f'+{max(0, self.root.winfo_screenwidth() - width)}+{self.root.winfo_y()}')
         self._taskbar_status(limits)
         if self.tip is not None:
             self._fill_tip()
@@ -518,7 +587,7 @@ class Widget:
             return lb
 
         first = True
-        for src in ("claude", "codex", "gemini"):
+        for src in NAMES:
             if src not in self.show:
                 continue
             lim = limits.get(src) or {}
@@ -533,9 +602,9 @@ class Widget:
                 if plan:
                     tk.Label(head, text=plan, bg=C["pill"], fg=C["ink2"], font=(FONT, 8), padx=6).pack(side="left", padx=(8, 0))
                 if not wins:
-                    lab(inner, STATUS.get(lim.get("status"), "No data yet"), C["muted"], 9, anchor="w")
+                    lab(inner, lim.get('message') or STATUS.get(lim.get("status"), "No data yet"), C["muted"], 9, anchor="w")
                     continue
-                for w in wins[:3]:
+                for w in wins:
                     used = float(w["used_percent"])
                     row = tk.Frame(inner, bg=C["tip"])
                     row.pack(fill="x", pady=(3, 0))
@@ -565,17 +634,17 @@ class Widget:
     def _taskbar_status(self, limits):
         """Title lists each tool's 5h remaining; the icon shows the lowest one as a gauge."""
         parts, worst = [], None
-        for src in ("claude", "codex", "gemini"):
+        for src in NAMES:
             if src not in self.show:
                 continue
             w = self._five_hour(limits.get(src) or {})
             if not w:
                 continue
             used = float(w["used_percent"])
-            parts.append(f"{SHORT[src]} {100 - used:.0f}%")
+            parts.append(f"{SHORT[src]} {wlabel(w['label'])} {max(0, 100 - used):.0f}%")
             if worst is None or used > worst[0]:
                 worst = (used, src)
-        self.root.title(" · ".join(parts) + " (5h)" if parts else "Usage Limits")
+        self.root.title('Token Tracker · ' + ' · '.join(parts) if parts else 'Token Tracker')
         if not self.live_icon:
             return
         key = None if worst is None else (max(0, round(100 - worst[0])), worst[1])
@@ -591,7 +660,11 @@ class Widget:
                 text = str(left) if left < 100 else None
                 imgs = [tk.PhotoImage(data=base64.b64encode(icon.gauge_png(s, left / 100, col, text))) for s in (32, 64)]
             self._icons = imgs  # keep references, Tk does not
-            self.root.iconphoto(False, *imgs)
+            self.root.iconphoto(True, *imgs)
+            if Win.ok:
+                target = paths.data_dir() / 'taskbar.ico'
+                icon.write_gauge_ico(target, key)
+                Win.set_icon(self.root, target)
         except tk.TclError:
             pass
 

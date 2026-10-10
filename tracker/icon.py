@@ -158,6 +158,23 @@ def write_ico(path, sizes=(16, 20, 24, 32, 40, 48, 64, 128, 256)):
         f.write(head + dirs + b"".join(imgs))
 
 
+def write_gauge_ico(path, key):
+    if key is None:
+        return write_ico(path, (16, 32, 48))
+    left, source = key
+    from .widget import ring_color, rgb
+    sizes = (16, 32, 48)
+    images = [gauge_png(size, left / 100, rgb(ring_color(source, 100 - left)),
+                        str(left) if left < 100 else None) for size in sizes]
+    offset = 6 + 16 * len(images)
+    entries = []
+    for size, data in zip(sizes, images):
+        entries.append(struct.pack('<BBBBHHII', size, size, 0, 0, 1, 32, len(data), offset))
+        offset += len(data)
+    with open(path, 'wb') as stream:
+        stream.write(struct.pack('<HHH', 0, 1, len(images)) + b''.join(entries) + b''.join(images))
+
+
 if __name__ == "__main__":  # regenerate assets/: python -m tracker.icon
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent / "assets"
