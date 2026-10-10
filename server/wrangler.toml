@@ -6,4 +6,4 @@ compatibility_date = "2025-09-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "token-tracker-rank"
-database_id = "REPLACE_WITH_DATABASE_ID"
+database_id = "fb1facbb-ae16-498e-b30c-70611b272129"

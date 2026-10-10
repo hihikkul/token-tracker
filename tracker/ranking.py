@@ -22,8 +22,8 @@ from datetime import date, datetime, timedelta
 from . import paths
 from .pricing import cost
 
-# Filled in once the shared server is deployed (deploy_server.bat). config.json `ranking.server` wins.
-DEFAULT_SERVER = ""
+# Shared ranking service. config.json `ranking.server` overrides this address.
+DEFAULT_SERVER = "https://token-tracker-rank.hihikkul-token-tracker.workers.dev"
 
 SOURCES = ("claude", "codex", "gemini")
 NAMES = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}

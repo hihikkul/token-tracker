@@ -8,7 +8,7 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 화면 구석에 떠 있는 **한도 위젯**과 브라우저로 여는 **사용량 대시보드** 두 가지로 되어 있어요.
 
 - 설치할 패키지 없음 (Python 표준 라이브러리만 사용)
-- 모든 기록은 내 PC 안에만 저장돼요. 대화 내용은 읽지 않고 토큰 수만 셉니다.
+- 사용량 기록은 내 PC에 저장돼요. 랭킹에 참가하면 닉네임, 요금제 이름, 기간별 금액만 공유 서버로 보냅니다.
 - Windows와 macOS에서 돌아가요. Mac은 [Releases](https://github.com/hihikkul/token-tracker/releases/latest)의 DMG로 설치해요.
 
 ## 설치
@@ -70,7 +70,9 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 
 - *새 그룹 만들기*로 초대 코드를 받고, 친구는 *초대 코드로 참가*.
 - 서버로 가는 건 닉네임, 요금제 이름, 기간별 API 환산 금액과 구독료 몫뿐이에요. 대화 내용, 프로젝트, 모델별 기록은 보내지 않아요. 15분마다 갱신돼요.
-- 서버는 Cloudflare Workers + D1 (`server/`). 처음 한 번 `deploy_server.bat` (Mac은 `deploy_server.command`)로 내 Cloudflare 계정에 올려요. Node.js가 필요하고, 브라우저에서 Cloudflare 로그인을 한 번 허용하면 끝이에요.
+- 공유 서버는 Cloudflare Workers + D1 (`server/`)에서 운영 중이에요. 별도 서버 설치 없이 그룹을 만들거나 초대 코드로 참가하면 됩니다.
+- 서버 주소: https://token-tracker-rank.hihikkul-token-tracker.workers.dev
+- 별도 서버를 직접 운영하려면 `deploy_server.bat` (Mac은 `deploy_server.command`)로 본인 Cloudflare 계정에 배포할 수 있어요. Node.js와 Cloudflare 로그인이 필요합니다.
 
 ## 어디서 읽나요
 
