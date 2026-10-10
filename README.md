@@ -108,6 +108,7 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 - `widget.font`, `widget.number_font`: 글꼴 (비워 두면 Segoe UI Variable)
 - `widget.taskbar`: 작업 표시줄 버튼과 % 아이콘 (기본 `true`)
 - Windows에서 작업 표시줄에 고정할 때는 Token Tracker 기본 아이콘과 앱 실행 명령을 사용합니다. 이전 버전에서 고정한 Python 아이콘은 고정을 해제한 뒤 다시 고정하세요.
+- 고정된 기본 아이콘은 Windows가 실행 중에도 사용하므로, 실시간 잔여량은 아이콘 위 배지로 표시합니다.
 - `extra_paths`: 기본 위치 밖의 로그 폴더 추가. 예: `"claude": ["D:/backup/.claude/projects"]`
 - `port` (8765), `scan_interval_sec` (60), `limits_interval_sec` (300)
 - 환경변수 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_HOME`, `TOKENTRACKER_HOME`도 따라가요.

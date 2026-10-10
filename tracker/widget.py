@@ -753,6 +753,10 @@ class Widget:
                 target = paths.data_dir() / 'taskbar.ico'
                 icon.write_gauge_ico(target, key)
                 Win.set_icon(self.root, target)
+                from .windows_shell import set_usage_overlay
+                set_usage_overlay(Win.hwnd(self.root),
+                                  self.root._native_icons[0] if key is not None else None,
+                                  f'{SHORT[key[1]]} {key[0]}% remaining' if key else '')
         except tk.TclError:
             pass
 

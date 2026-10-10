@@ -66,3 +66,33 @@ def configure_pin(hwnd, executable, app, icon):
                 raise OSError(f'IPropertyStore.SetValue: {hr:#x}')
     finally:
         method(store, 2)(store)  # Release; window stores do not require Commit
+
+
+def set_usage_overlay(hwnd, icon_handle, description):
+    """Pinned group icons override WM_SETICON; overlays carry live status instead."""
+    if os.name != 'nt':
+        return
+    ole = ctypes.windll.ole32
+    initialized = ole.CoInitialize(None)
+    taskbar = ctypes.c_void_p()
+    clsid = GUID.parse('56fdf344-fd6d-11d0-958a-006097c9a090')
+    iid = GUID.parse('ea1afb91-9e28-4b86-90e9-9e9f8a5eefaf')  # ITaskbarList3
+    create = ole.CoCreateInstance
+    create.argtypes = [ctypes.POINTER(GUID), ctypes.c_void_p, wintypes.DWORD,
+                       ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p)]
+    create.restype = ctypes.c_long
+    try:
+        hr = create(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(taskbar))
+        if hr < 0:
+            raise OSError(f'CoCreateInstance(TaskbarList): {hr:#x}')
+        hr = method(taskbar, 3)(taskbar)  # HrInit
+        if hr >= 0:
+            hr = method(taskbar, 18, wintypes.HWND, wintypes.HANDLE, wintypes.LPCWSTR)(
+                taskbar, hwnd, icon_handle, description)
+        if hr < 0:
+            raise OSError(f'ITaskbarList3.SetOverlayIcon: {hr:#x}')
+    finally:
+        if taskbar:
+            method(taskbar, 2)(taskbar)
+        if initialized >= 0:
+            ole.CoUninitialize()

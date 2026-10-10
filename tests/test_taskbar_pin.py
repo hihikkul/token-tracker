@@ -2,12 +2,14 @@ import ctypes
 import os
 import subprocess
 import tkinter as tk
+import tempfile
 import unittest
+from pathlib import Path
 
-from tracker import paths
+from tracker import icon, paths
 from tracker.shortcuts import _pythonw
 from tracker.widget import Win
-from tracker.windows_shell import APP_ID, PropVariant, PropertyKey, key, method, window_store
+from tracker.windows_shell import APP_ID, PropVariant, PropertyKey, key, method, window_store, set_usage_overlay
 
 
 @unittest.skipUnless(os.name == 'nt', 'Windows shell integration')
@@ -20,6 +22,14 @@ class TaskbarPinTests(unittest.TestCase):
             Win.show_in_taskbar(root)
             root.update()
             Win.set_icon(root, paths.APP_ROOT / 'assets' / 'token-tracker.ico')
+            with tempfile.TemporaryDirectory() as temp:
+                filename = Path(temp) / 'usage.ico'
+                for remaining in (78, 0):
+                    icon.write_gauge_ico(filename, (remaining, 'codex'))
+                    Win.set_icon(root, filename)
+                    set_usage_overlay(Win.hwnd(root), root._native_icons[0],
+                                      f'Codex {remaining}% remaining')
+                set_usage_overlay(Win.hwnd(root), None, '')
             for _ in range(3):
                 self.assertTrue(Win.minimize(root))
                 root.update()
