@@ -205,6 +205,19 @@ class Win:
             pass
 
     @classmethod
+    def minimize(cls, root):
+        """Minimize the existing wrapper without recreating a borderless Tk window."""
+        if not cls.ok:
+            return False
+        import ctypes
+        from ctypes import wintypes
+        show = ctypes.windll.user32.ShowWindow
+        show.argtypes = [wintypes.HWND, ctypes.c_int]
+        show.restype = wintypes.BOOL
+        show(cls.hwnd(root), 6)  # SW_MINIMIZE; preserve APPWINDOW and the native icon
+        return True
+
+    @classmethod
     def round_corners(cls, win, border=None, small=False):
         """Windows 11 rounded corners and border color (ignored on Windows 10)."""
         if not cls.ok:
@@ -350,8 +363,10 @@ class Widget:
         threading.Thread(target=work, daemon=True).start()
 
     def minimize(self):
-        """Borderless windows can't iconify, so drop the border just while minimized."""
+        """Keep the Windows taskbar wrapper intact while minimizing."""
         self._hide_tip()
+        if Win.minimize(self.root):
+            return
         self.root.overrideredirect(False)
         self.root.iconify()
 
