@@ -208,11 +208,36 @@ def codex_limits(db):
     if any(s.get("account") for s in snaps):
         snaps = [s for s in snaps if s.get("account")]  # old logs carried no account id
     snaps.sort(key=lambda s: -(s.get("ts") or 0))
-    seen, uniq = set(), []
-    for s in snaps:  # one entry per plan, newest wins (older databases keyed by session creator)
-        k = (s.get("plan") or s.get("account"), s.get("limit_id"))
+    # Two snapshots belong to the same quota when their windows reset at the same moments
+    # (a plan-less snapshot from newer Codex builds and a labelled one, or old keying).
+    # Keep the newest values and borrow the plan name from any snapshot in the group.
+    def resets(s):
+        return {w.get("window_minutes"): w.get("resets_at") for w in s.get("windows", [])
+                if w.get("resets_at") and w.get("window_minutes")}
+
+    def same_quota(a, b):  # judged on the longest window both have (the weekly one)
+        ra, rb = resets(a), resets(b)
+        common = [m for m in ra if m in rb]
+        return bool(common) and abs(ra[max(common)] - rb[max(common)]) <= 120
+
+    uniq = []
+    for s in snaps:  # newest first
+        hit = next((u for u in uniq if u.get("limit_id") == s.get("limit_id")
+                    and ((s.get("plan") and s.get("plan") == u.get("plan")) or same_quota(u, s))), None)
+        if hit is None:
+            uniq.append(dict(s))
+        elif not hit.get("plan") and s.get("plan"):
+            hit["plan"] = s["plan"]
+    for u in uniq:
+        if not u.get("plan") and u.get("plan_guess"):
+            u["plan"] = u["plan_guess"]
+    # an older entry with the same plan name is a stale copy of a newer one
+    seen, kept = set(), []
+    for u in uniq:
+        k = (u.get("plan") or u.get("account"), u.get("limit_id"))
         if k not in seen:
-            seen.add(k); uniq.append(s)
+            seen.add(k); kept.append(u)
+    uniq = kept
     accts = [_codex_one(s, now) for s in uniq]
     # same plan twice -> add a short account suffix so they can be told apart
     plans = [a["plan"] for a in accts]

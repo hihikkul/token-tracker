@@ -172,28 +172,47 @@ def _limits_key(snap, acct):
     return f"{who}:{snap['limit_id']}"
 
 
-def _keep_limits(accounts, snap, acct):
+def _keep_limits(accounts, snap, acct, plans, learn):
+    """Store the newest snapshot per quota. Returns True once this file taught a plan.
+
+    Newer Codex builds often leave plan_type out. Such snapshots stay keyed by login and get
+    a plan_guess for their label; the guess comes from the first labelled snapshot of a
+    session, which belongs to the login that started it (a mid-session switch comes later)."""
+    who = acct or "default"
+    if snap.get("plan"):
+        if learn:
+            plans[who] = snap["plan"]
+            learn = False
+    elif plans.get(who):
+        snap["plan_guess"] = plans[who]
     key = _limits_key(snap, acct)
     if snap["ts"] >= (accounts.get(key) or {}).get("ts", 0):
         snap["account"] = acct
         accounts[key] = snap
+    return learn
 
 
-LIMITS_VERSION = 2
+LIMITS_VERSION = 4
 
 
 def _rebuild_codex_limits(db):
     """One-off re-read of the last 8 days of Codex logs after the limits keying changed."""
-    accounts, cutoff = {}, time.time() - 8 * 86400
+    accounts, plans, cutoff = {}, {}, time.time() - 8 * 86400
+    files = []
     for d in paths.codex_session_dirs():
         for path in d.rglob("*.jsonl"):
             try:
-                if path.stat().st_mtime < cutoff:
-                    continue
+                if path.stat().st_mtime >= cutoff:
+                    files.append(path)
+            except OSError:
+                pass
+    for path in sorted(files, key=lambda x: x.name):
+        if True:
+            try:
                 f = open(path, encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            acct = None
+            acct, learn = None, True
             with f:
                 for line in f:
                     if '"session_meta"' not in line and '"rate_limits"' not in line:
@@ -209,8 +228,9 @@ def _rebuild_codex_limits(db):
                         ts = parse_ts(o.get("timestamp"))
                         snap = _codex_limits_snapshot(p.get("rate_limits"), ts) if ts else None
                         if snap:
-                            _keep_limits(accounts, snap, acct)
+                            learn = _keep_limits(accounts, snap, acct, plans, learn)
     db.set_kv("codex_limits_by_account", accounts)
+    db.set_kv("codex_plan_by_account", plans)
     db.set_kv("codex_limits_version", LIMITS_VERSION)
 
 
@@ -221,6 +241,7 @@ def scan_codex(db, report):
     if db.get_kv("codex_limits_version") != LIMITS_VERSION:
         _rebuild_codex_limits(db)
     accounts = db.get_kv("codex_limits_by_account") or {}  # plan -> latest snapshot
+    plans = db.get_kv("codex_plan_by_account") or {}        # login -> last plan seen
     for d in paths.codex_session_dirs():
         for path in d.rglob("*.jsonl"):
             n_files += 1
@@ -236,6 +257,7 @@ def scan_codex(db, report):
                 m = _UUID.search(path.name)
                 sid = m.group(0) if m else path.stem
             model, cwd, acct = state.get("model"), state.get("cwd"), state.get("acct")
+            learn = state.get("learn", True)
             prev = state.get("prev") or {}
             rows = []
             for _, o in res["lines"]:
@@ -259,7 +281,7 @@ def scan_codex(db, report):
                     continue
                 snap = _codex_limits_snapshot(p.get("rate_limits"), ts)
                 if snap:
-                    _keep_limits(accounts, snap, acct)
+                    learn = _keep_limits(accounts, snap, acct, plans, learn)
                 info = p.get("info") or {}
                 tot = info.get("total_token_usage")
                 if not isinstance(tot, dict):
@@ -287,9 +309,10 @@ def scan_codex(db, report):
                     "reasoning": max(0, delta["reasoning_output_tokens"]),
                 })
             n_rows += db.upsert_records(rows)
-            res["commit"]({"sid": sid, "model": model, "cwd": cwd, "acct": acct, "prev": prev})
+            res["commit"]({"sid": sid, "model": model, "cwd": cwd, "acct": acct, "prev": prev, "learn": learn})
     if accounts:
         db.set_kv("codex_limits_by_account", accounts)
+        db.set_kv("codex_plan_by_account", plans)
     report["codex"] = {"files": n_files, "new_records": n_rows, "accounts": len(accounts),
                        "dirs": [str(p) for p in paths.codex_session_dirs()]}
 
