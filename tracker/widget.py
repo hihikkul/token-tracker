@@ -77,6 +77,10 @@ class Widget:
         self.compact = bool(wc.get("compact"))
         self.root = tk.Tk()
         self.root.title("Usage Limits")
+        try:
+            self.root.iconbitmap(default=str(paths.APP_ROOT / "assets" / "token-tracker.ico"))
+        except (tk.TclError, AttributeError):
+            pass
         self.root.overrideredirect(True)
         self.root.configure(bg=C["bg"])
         self.root.attributes("-topmost", bool(wc.get("topmost", True)))

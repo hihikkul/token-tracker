@@ -1,8 +1,10 @@
 @echo off
 chcp 65001 >nul
-rem 로그인할 때 자동 실행되도록 시작프로그램에 바로가기를 만듭니다. 지우려면 uninstall_startup.bat
-set "TARGET=%~dp0run.bat"
-set "LNK=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\TokenTracker.lnk"
-powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%LNK%'); $s.TargetPath='%TARGET%'; $s.WorkingDirectory='%~dp0'; $s.WindowStyle=7; $s.Save()"
-echo 시작프로그램에 등록했어요: %LNK%
+rem 아이콘을 만들고, 로그인할 때 자동으로 켜지게 합니다
+cd /d "%~dp0"
+set PYTHONIOENCODING=utf-8
+where python >nul 2>nul && (python app.py --install --startup & pause & exit /b)
+where py >nul 2>nul && (py -3 app.py --install --startup & pause & exit /b)
+if exist "%USERPROFILE%\anaconda3\python.exe" ("%USERPROFILE%\anaconda3\python.exe" app.py --install --startup & pause & exit /b)
+echo Python을 찾지 못했어요. https://www.python.org 에서 설치할 때 "Add python.exe to PATH"를 체크하세요.
 pause

@@ -1,4 +1,8 @@
-# Token Tracker
+<img src="assets/token-tracker.png" width="72" align="left">
+
+# token-tracker
+
+<br clear="left">
 
 Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에서 바로 보는 도구예요.
 화면 구석에 떠 있는 **한도 위젯**과 브라우저로 여는 **사용량 대시보드** 두 가지로 되어 있어요.
@@ -12,11 +16,15 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 1. **Python 3.10 이상**이 필요해요. 없으면 [python.org](https://www.python.org/downloads/)에서 설치하고, 설치 화면에서 *Add python.exe to PATH*를 체크하세요. (Anaconda도 됩니다)
 2. 이 페이지 위쪽 초록색 **Code → Download ZIP**으로 받아서 원하는 폴더에 압축을 풀어요.
    git을 쓴다면 `git clone https://github.com/hihikkul/token-tracker.git`
-3. 폴더 안의 **`run.bat`** 을 더블클릭하면 끝.
+3. 폴더 안의 **`install.bat`** 을 한 번 더블클릭해요. 바탕화면과 시작 메뉴에 **token-tracker** 아이콘이 생겨요.
+4. 이제부터는 바탕화면의 **token-tracker** 아이콘을 누르면 실행돼요.
+   - 화면 구석에 한도 위젯이 뜨고, 이미 켜져 있을 때 누르면 대시보드가 열려요.
    - 처음 켤 때는 기존 로그를 한 번 쭉 읽느라 몇 초에서 1분쯤 걸려요.
-4. (선택) **`install_startup.bat`** 을 한 번 실행하면 PC를 켤 때마다 자동으로 떠요. 해제는 `uninstall_startup.bat`.
+5. (선택) PC를 켤 때마다 자동으로 띄우고 싶으면 `install.bat` 대신 **`install_startup.bat`** 을 실행해요. 아이콘을 전부 지우려면 `uninstall.bat`.
 
-업데이트할 때는 위젯을 끄고(✕) 새로 받은 파일을 같은 폴더에 덮어쓴 뒤 다시 `run.bat`. 모은 기록은 `%LOCALAPPDATA%\TokenTracker`에 따로 있어서 그대로 남아요.
+압축을 푼 폴더는 지우거나 옮기지 마세요. 아이콘이 그 폴더를 가리켜요. 옮겼다면 `install.bat`을 다시 실행하면 돼요.
+
+업데이트할 때는 위젯을 끄고(✕) 새로 받은 파일을 같은 폴더에 덮어쓴 뒤 아이콘으로 다시 켜면 돼요. 모은 기록은 `%LOCALAPPDATA%\TokenTracker`에 따로 있어서 그대로 남아요.
 
 ## 위젯 (Usage Limits)
 

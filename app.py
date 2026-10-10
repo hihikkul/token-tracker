@@ -72,7 +72,17 @@ def main():
     ap.add_argument("--doctor", action="store_true")
     ap.add_argument("--export", metavar="FOLDER", help="대시보드용 JSON 내보내기")
     ap.add_argument("--port", type=int)
+    ap.add_argument("--install", action="store_true", help="바탕화면·시작 메뉴에 아이콘 만들기 (Windows)")
+    ap.add_argument("--startup", action="store_true", help="--install과 함께: 로그인할 때 자동 실행")
+    ap.add_argument("--uninstall", action="store_true", help="만든 아이콘 지우기")
     a = ap.parse_args()
+
+    if a.install:
+        from tracker.shortcuts import install
+        return install(startup=a.startup)
+    if a.uninstall:
+        from tracker.shortcuts import uninstall
+        return uninstall()
 
     if a.scan:
         return cmd_scan()
