@@ -3,3 +3,5 @@ __pycache__/
 *.db
 *.db-*
 .DS_Store
+server/node_modules/
+server/.wrangler/

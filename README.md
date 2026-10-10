@@ -9,7 +9,7 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 
 - 설치할 패키지 없음 (Python 표준 라이브러리만 사용)
 - 모든 기록은 내 PC 안에만 저장돼요. 대화 내용은 읽지 않고 토큰 수만 셉니다.
-- Windows 기준으로 만들었어요.
+- Windows와 macOS에서 돌아가요. Mac은 [Releases](https://github.com/hihikkul/token-tracker/releases/latest)의 DMG로 설치해요.
 
 ## 설치
 
@@ -25,6 +25,15 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 압축을 푼 폴더는 지우거나 옮기지 마세요. 아이콘이 그 폴더를 가리켜요. 옮겼다면 `install.bat`을 다시 실행하면 돼요.
 
 **업데이트는 자동이에요.** 위젯이 켜져 있으면 시작 직후와 1시간마다 GitHub에 새 버전이 있는지 보고, 있으면 받아서 스스로 다시 켜져요. 따로 누를 건 없어요. 모은 기록과 설정은 `%LOCALAPPDATA%\TokenTracker`에 따로 있어서 그대로 남아요. 끄려면 설정에 `"auto_update": false` (git clone으로 받았다면 자동 업데이트 대신 `git pull`).
+
+## macOS
+
+1. [Releases](https://github.com/hihikkul/token-tracker/releases/latest)에서 내 Mac에 맞는 DMG를 받아요 (M1 이후 = `arm64`, Intel = `x86_64`).
+2. 열어서 **Token Tracker**를 Applications로 끌어다 놓고 실행해요.
+3. 서명하지 않은 앱이라 처음엔 "확인되지 않은 개발자" 경고가 떠요. **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**를 누르면 돼요.
+4. Claude Code 로그인 정보는 키체인에 있어서, 처음에 키체인 접근을 물어보면 **허용**을 눌러 주세요 (한도 조회용, 읽기만 해요).
+
+Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우클릭 메뉴에 *Download vX* 가 생겨요. 기록과 설정은 `~/Library/Application Support/TokenTracker`에 있어요.
 
 ## 위젯 (Usage Limits)
 
@@ -46,6 +55,22 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 - 입력·출력·캐시 비율, 캐시 적중률, 캐시로 아낀 비용
 - 누적 비용(직전 같은 기간과 비교), 월별, 프로젝트, 모델
 - 기간(7/30/90일/전체), 도구(Claude/Codex), 단위(토큰/$) 전환. 모델이나 프로젝트를 누르면 그것만 걸러 봐요.
+
+## 쌀먹 비율
+
+대시보드 위쪽 카드. 같은 토큰을 API 정가로 썼다면 냈을 금액 ÷ 그 기간만큼의 구독료예요 (오늘 / 이번 주 / 이번 달).
+
+- 구독료는 한도 조회에서 읽은 요금제의 정가로 정해요: Claude Pro $20 · Max 5x $100 · Max 20x $200, ChatGPT(Codex) Plus $20 · Pro $200.
+- Gemini는 요금제를 읽을 방법이 없어서, 카드의 *구독료 수정*에서 넣어야 계산에 들어가요. 다른 값도 거기서 덮어쓸 수 있어요.
+- 기간 구독료 = 월 구독료 × 12 / 365 × 지난 날수.
+
+## 쌀숭이 랭킹
+
+대시보드 오른쪽 위 **랭킹** 버튼. 친구들과 그룹을 만들어 일일 / 주간 / 월간 쌀먹 비율을 겨뤄요. 그룹 1등이 되면 처음 들어갈 때 축하해 줘요.
+
+- *새 그룹 만들기*로 초대 코드를 받고, 친구는 *초대 코드로 참가*.
+- 서버로 가는 건 닉네임, 요금제 이름, 기간별 API 환산 금액과 구독료 몫뿐이에요. 대화 내용, 프로젝트, 모델별 기록은 보내지 않아요. 15분마다 갱신돼요.
+- 서버는 Cloudflare Workers + D1 (`server/`). 처음 한 번 `deploy_server.bat` (Mac은 `deploy_server.command`)로 내 Cloudflare 계정에 올려요. Node.js가 필요하고, 브라우저에서 Cloudflare 로그인을 한 번 허용하면 끝이에요.
 
 ## 어디서 읽나요
 

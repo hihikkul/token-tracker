@@ -4,7 +4,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import paths, stats
+from . import paths, ranking, stats
 from .limits import all_limits
 
 WEB = paths.APP_DIR / "web"
@@ -34,6 +34,19 @@ def make_handler(engine):
                 return self._send(200, (WEB / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/d3.v7.min.js":
                 return self._send(200, (WEB / "d3.v7.min.js").read_bytes(), "text/javascript; charset=utf-8")
+            if u.path == "/ssalsoongi.jpg":
+                return self._send(200, (WEB / "ssalsoongi.jpg").read_bytes(), "image/jpeg")
+            if u.path == "/api/ratio":
+                rep = ranking.report(engine.db, engine.snapshot.get("limits"))
+                rep["ranking"] = ranking.state()
+                return self._send(200, rep)
+            if u.path == "/api/ranking":
+                try:
+                    res = ranking.ranking(engine.db, engine.snapshot.get("limits"), (q.get("period") or ["week"])[0])
+                except ranking.RankingError as e:
+                    return self._send(200, {"error": str(e), "state": ranking.state()})
+                res["state"] = ranking.state()
+                return self._send(200, res)
             if u.path in ("/favicon.png", "/favicon.ico"):
                 return self._send(200, (paths.APP_DIR / "assets" / "token-tracker.png").read_bytes(), "image/png")
             if u.path == "/api/data":
@@ -60,7 +73,52 @@ def make_handler(engine):
                                         "db": engine.db.path})
             return self._send(404, {"error": "not found"})
 
+        def _body(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > 16384:
+                return {}
+            try:
+                return json.loads(self.rfile.read(n).decode("utf-8") or "{}")
+            except ValueError:
+                return {}
+
         def do_POST(self):
+            path = urlparse(self.path).path
+            if path.startswith("/api/") and self.headers.get("Origin") not in (None, f"http://{self.headers.get('Host')}"):
+                return self._send(403, {"error": "forbidden"})  # only the dashboard itself may change settings
+            if path.startswith("/api/ranking/"):
+                b = self._body()
+                nick = str(b.get("nick") or "").strip()[:24]
+                try:
+                    if path == "/api/ranking/create":
+                        ranking.create(str(b.get("group_name") or "").strip()[:40] or "token-tracker",
+                                       nick or ranking.random_nick())
+                    elif path == "/api/ranking/join":
+                        ranking.join(str(b.get("code") or ""), nick or ranking.random_nick())
+                    elif path == "/api/ranking/leave":
+                        ranking.leave()
+                    elif path == "/api/ranking/nick":
+                        ranking.set_nick(nick)
+                        ranking.sync(engine.db, engine.snapshot.get("limits"), force=True)
+                    else:
+                        return self._send(404, {"error": "not found"})
+                except ranking.RankingError as e:
+                    return self._send(200, {"error": str(e), "state": ranking.state()})
+                if path in ("/api/ranking/create", "/api/ranking/join"):
+                    try:
+                        ranking.sync(engine.db, engine.snapshot.get("limits"), force=True)
+                    except ranking.RankingError:
+                        pass
+                return self._send(200, {"ok": True, "state": ranking.state()})
+            if path == "/api/settings":
+                b = self._body()
+                cfg = paths.load_config()
+                subs = cfg.setdefault("subscription_usd_month", {})
+                for src, v in (b.get("subscription_usd_month") or {}).items():
+                    if src in ("claude", "codex", "gemini") and isinstance(v, (int, float)) and 0 <= v < 10000:
+                        subs[src] = v
+                paths.save_config(cfg)
+                return self._send(200, {"ok": True})
             if urlparse(self.path).path == "/api/refresh":
                 snap = engine.refresh(force_limits=True)
                 return self._send(200, {"ok": True, "updated": snap["updated"]})

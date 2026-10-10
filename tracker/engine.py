@@ -51,5 +51,10 @@ class Engine:
     def _loop(self):
         while not self._stop.is_set():
             self.refresh()
+            try:
+                from . import ranking
+                ranking.sync(self.db, self.snapshot.get("limits"))
+            except Exception:
+                pass  # offline or server not set up: try again next round
             self._wake.wait(self.cfg.get("scan_interval_sec", 60))
             self._wake.clear()

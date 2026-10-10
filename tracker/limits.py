@@ -106,15 +106,19 @@ def fetch_claude(db, force=False):
     result = {"source": "claude", "checked_at": now, "windows": cached.get("windows", []),
               "fetched_at": cached.get("fetched_at"), "status": "ok", "message": ""}
     cred_file = paths.claude_credentials_file()
-    if not cred_file:
+    keychain = None if cred_file else paths.claude_keychain_oauth()
+    if not cred_file and keychain is None:
         result.update(status="no_credentials",
                       message="Claude Code 로그인 정보(.credentials.json)를 찾지 못했어요")
         db.set_kv("claude_limits", result)
         return result
-    try:
-        oauth = json.loads(cred_file.read_text(encoding="utf-8")).get("claudeAiOauth") or {}
-    except (OSError, ValueError):
-        oauth = {}
+    if keychain is not None:
+        oauth = keychain
+    else:
+        try:
+            oauth = json.loads(cred_file.read_text(encoding="utf-8")).get("claudeAiOauth") or {}
+        except (OSError, ValueError):
+            oauth = {}
     token = oauth.get("accessToken")
     sub = (oauth.get("subscriptionType") or "").lower()
     if sub:
@@ -127,7 +131,7 @@ def fetch_claude(db, force=False):
             result["plan"] += " 5x"
     exp = oauth.get("expiresAt")
     refresh_note = None
-    if token and exp and exp / 1000 < now + 60 and cfg.get("refresh_claude_token", True):
+    if token and exp and exp / 1000 < now + 60 and cred_file and cfg.get("refresh_claude_token", True):
         new, err = _refresh_claude(cred_file, db)
         if new:
             token, exp = new["accessToken"], new.get("expiresAt")

@@ -9,6 +9,7 @@ On Windows the bar also has a taskbar button whose icon is a gauge with the lowe
 """
 import base64
 import os
+import sys
 import threading
 import time
 import tkinter as tk
@@ -36,6 +37,9 @@ STATUS = {
     "error": "Couldn't fetch limits",
     "unsupported": "No limit data available",
 }
+MAC = sys.platform == "darwin"
+RIGHT_CLICK = "<Button-2>" if MAC else "<Button-3>"  # Tk on macOS reports the right button as 2
+RELEASES = "https://github.com/hihikkul/token-tracker/releases/latest"
 FONT = "Segoe UI"
 NUM_FONT = "Segoe UI"
 H = 36       # bar height, about a taskbar button
@@ -52,9 +56,10 @@ def pick_fonts(root, wanted, wanted_num):
             if n and n in fams:
                 return n
         return tkfont.nametofont("TkDefaultFont").actual("family")
-    text = first(None if wanted in legacy else wanted, "Segoe UI Variable Text", "Segoe UI")
+    text = first(None if wanted in legacy else wanted, "Segoe UI Variable Text", "Segoe UI",
+                 "SF Pro Text", "Helvetica Neue")
     num = first(None if wanted_num in legacy else wanted_num, "Segoe UI Variable Display",
-                "Segoe UI Variable Text", "Segoe UI")
+                "Segoe UI Variable Text", "Segoe UI", "SF Pro Display", "SF Pro Text", "Helvetica Neue")
     return text, num
 
 
@@ -189,7 +194,8 @@ class Widget:
         self.cfg = paths.load_config()
         wc = self.cfg.setdefault("widget", {})
         self.show = wc.get("show") or ["claude", "codex"]
-        self.taskbar = bool(wc.get("taskbar", True)) and Win.ok
+        self.taskbar = bool(wc.get("taskbar", True)) and Win.ok       # Windows taskbar button
+        self.live_icon = bool(wc.get("taskbar", True)) and (Win.ok or MAC)  # gauge on the taskbar / Dock icon
         Win.dpi_aware()
         if self.taskbar:
             Win.app_id()
@@ -224,7 +230,7 @@ class Widget:
         self._tip_job = None
         self._build_menu()
         for w in (self.root,):
-            w.bind("<Button-3>", self._popup)
+            w.bind(RIGHT_CLICK, self._popup)
         self._draw()
         self._place(wc)
         Win.round_corners(self.root, C["edge"])
@@ -277,7 +283,7 @@ class Widget:
         w.bind("<B1-Motion>", self._drag)
         w.bind("<ButtonRelease-1>", self._drag_end)
         w.bind("<Double-Button-1>", lambda e: self.open_dashboard())
-        w.bind("<Button-3>", self._popup)
+        w.bind(RIGHT_CLICK, self._popup)
         w.configure(cursor="fleur")
 
     def _drag_start(self, e):
@@ -337,6 +343,19 @@ class Widget:
         self.root.after(int(hours * 3600 * 1000), self._auto_update)
 
     def _update(self, manual):
+        if updater.is_frozen():
+            def check():
+                try:
+                    new = updater.check()
+                except Exception:
+                    return
+                if new and not getattr(self, "_offered", None):
+                    self._offered = new
+                    self.root.after(0, lambda: (
+                        self.menu.insert_command(0, label=f"Download v{new}", command=lambda: webbrowser.open(RELEASES)),
+                        self._note(f"v{new} available · right-click to download", 20000)))
+            threading.Thread(target=check, daemon=True).start()
+            return
         if updater.is_git_checkout():
             if manual:
                 self._note("Git checkout: update with git pull")
@@ -557,7 +576,7 @@ class Widget:
             if worst is None or used > worst[0]:
                 worst = (used, src)
         self.root.title(" · ".join(parts) + " (5h)" if parts else "Usage Limits")
-        if not self.taskbar:
+        if not self.live_icon:
             return
         key = None if worst is None else (max(0, round(100 - worst[0])), worst[1])
         if key == self._icon_key:

@@ -33,6 +33,7 @@
   --good: #3fb950; --warning: #e3b341; --serious: #f0883e; --critical: #f85149;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-tap-highlight-color: transparent; }
 body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.45; font-variant-numeric: tabular-nums; }
 button { font: inherit; color: inherit; touch-action: manipulation; }
@@ -72,6 +73,111 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .lw .track { margin-top: 7px; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
 .lw .track i { display: block; height: 100%; border-radius: 3px; transition: width .4s cubic-bezier(.16, 1, .3, 1); }
 .lim .msg { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+
+/* 쌀먹 비율 */
+.ratio { display: flex; flex-wrap: wrap; gap: 32px; padding: 22px 24px; }
+.ratio[hidden], .rank-view[hidden] { display: none; }
+.ratio-l { flex: 1 1 260px; display: flex; flex-direction: column; gap: 8px; }
+.ratio-l .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.ratio-v { font-size: clamp(52px, 7vw, 76px); font-weight: 700; letter-spacing: -.04em; line-height: 1; color: #c2410c; }
+:root[data-theme="dark"] .ratio-v { color: #f0883e; }
+.gain { align-self: flex-start; font-size: 14px; font-weight: 700; color: #136c3c; background: #e8f5ec; border-radius: 999px; padding: 4px 12px; }
+.gain.loss { color: var(--ink2); background: var(--card2); }
+:root[data-theme="dark"] .gain:not(.loss) { color: #7ee2a1; background: rgba(63, 185, 80, .14); }
+.note { font-size: 12.5px; color: var(--muted); }
+.ratio-r { flex: 999 1 540px; min-width: 0; display: flex; flex-direction: column; }
+.rrow { display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) 7.5rem 4.2rem; gap: 14px; align-items: center; min-height: 54px; border-top: 1px solid var(--line); }
+.rrow.rh { min-height: 0; border: 0; padding-bottom: 6px; font-size: 12px; color: var(--muted); }
+.rrow .nm { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rrow .nm div { display: flex; align-items: center; gap: 8px; }
+.rrow .nm i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.rrow .nm b { font-size: 14.5px; }
+.rrow .nm small { font-size: 11.5px; color: var(--muted); padding-left: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plan { font-size: 11.5px; font-weight: 700; color: var(--ink2); background: var(--card2); border: 1px solid var(--edge); border-radius: 999px; padding: 0 7px; }
+.rbar { position: relative; height: 12px; border-radius: 6px; background: var(--card2); }
+.rbar span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; }
+.rbar em { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
+.rrow .amt { text-align: right; font-size: 13.5px; color: var(--ink2); white-space: nowrap; }
+.rrow .amt b { color: var(--ink); }
+.rrow .x { text-align: right; font-size: 18px; font-weight: 700; }
+.rrow .x.dim { color: var(--muted); font-size: 14px; font-weight: 400; }
+.rfoot { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding-top: 10px; font-size: 12px; color: var(--muted); }
+.linkbtn { all: unset; cursor: pointer; color: var(--accent); font-size: 12.5px; }
+.linkbtn:hover { text-decoration: underline; }
+.linkbtn:focus-visible { outline: 2px solid var(--accent); border-radius: 4px; }
+.subform { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; padding: 12px 14px; margin-top: 10px; border-radius: 10px; background: var(--card2); }
+.subform[hidden] { display: none; }
+.subform label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink2); }
+.subform input, .rank-form input { font: inherit; font-size: 14px; color: var(--ink); background: var(--card); border: 1px solid var(--edge); border-radius: 8px; padding: 6px 10px; width: 7.5rem; }
+.btn { font: inherit; font-size: 13.5px; min-height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--edge); background: var(--card); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.btn:hover { background: var(--card2); }
+.btn.primary { background: var(--ink); color: var(--page); border-color: var(--ink); font-weight: 700; }
+.btn.primary:hover { opacity: .9; }
+.btn svg { width: 15px; height: 15px; }
+.seg.sm button { min-height: 26px; padding: 0 11px; font-size: 13px; }
+
+/* 쌀숭이 랭킹 */
+.rank-view { display: grid; gap: 16px; }
+.rank-card { padding: 20px 24px 22px; display: flex; flex-direction: column; gap: 14px; }
+.rank-top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.rank-top h2 { margin: 0; font-size: 19px; }
+.rank-top > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.rank-top small { font-size: 13px; color: var(--muted); }
+.nickf { display: flex; flex-direction: column; gap: 8px; }
+.nickf label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.nickf input { font: inherit; font-size: 14px; color: var(--ink); background: var(--card); border: 1px solid var(--edge); border-radius: 8px; padding: 6px 10px; }
+.nickf .btn { align-self: flex-start; }
+.rank-wrap { display: flex; flex-wrap: wrap; gap: 24px; }
+.rank-list { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; }
+.rk { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) minmax(0, 1fr) 7.5rem 4.6rem; gap: 14px; align-items: center; min-height: 58px; padding: 0 12px; margin: 0 -12px; border-radius: 8px; }
+.rk.me { background: var(--card2); }
+.rk.stale { opacity: .5; }
+.rk .no { font-size: 15px; font-weight: 700; color: var(--muted); text-align: center; }
+.rk .no.top { font-size: 21px; color: var(--ink); }
+.rk .no.first { color: #c2410c; }
+.rk .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.rk .av { width: 32px; height: 32px; flex: none; border-radius: 50%; color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+.rk .who > div { display: flex; flex-direction: column; min-width: 0; }
+.rk .who b { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rk .who small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tier { flex: none; font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
+.t-king { color: #9a3412; background: #ffedd5; } .t-eat { color: #1d4ed8; background: #e0e7ff; } .t-even { color: var(--ink2); background: var(--card2); } .t-give { color: var(--muted); background: var(--card2); }
+.rk .rbar { height: 10px; }
+.rk .amt { text-align: right; font-size: 13px; color: var(--ink2); white-space: nowrap; }
+.rk .amt b { color: var(--ink); }
+.rk .x { text-align: right; font-size: 19px; font-weight: 700; }
+@media (max-width: 720px) {
+  .rk { grid-template-columns: 2rem minmax(0, 1fr) 4.2rem; gap: 10px; margin: 0; padding: 0 8px; }
+  .rk .rbar, .rk .amt { display: none; }
+  .rrow { grid-template-columns: minmax(0, 1fr) 6.5rem 3.6rem; gap: 10px; }
+  .rrow .rbar, .rrow.rh span:nth-child(2) { display: none; }
+}
+.rank-side { flex: 1 1 250px; align-self: flex-start; display: flex; flex-direction: column; gap: 12px; background: var(--card2); border-radius: 10px; padding: 16px 18px; font-size: 13px; color: var(--ink2); }
+.rank-side .big { font-size: 40px; font-weight: 700; letter-spacing: -.03em; line-height: 1; color: var(--ink); }
+.rank-side hr { border: 0; height: 1px; background: var(--line); margin: 2px 0; width: 100%; }
+.code { font-family: var(--mono); font-size: 16px; letter-spacing: .06em; color: var(--ink); }
+.legend2 { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--muted); }
+.rank-forms { display: flex; flex-wrap: wrap; gap: 16px; }
+.rank-form { flex: 1 1 300px; display: flex; flex-direction: column; gap: 12px; background: var(--card2); border-radius: 10px; padding: 18px; }
+.rank-form h3 { margin: 0; font-size: 15px; }
+.rank-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--ink2); }
+.rank-form input { width: 100%; box-sizing: border-box; }
+.err { color: #d63a3a; font-size: 13px; }
+
+/* 1등 축하 */
+.party { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(10, 10, 12, .62); padding: 16px; }
+.party[hidden] { display: none; }
+.party canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.party-card { position: relative; width: min(420px, 100%); background: var(--card); border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px -20px rgba(0, 0, 0, .6); text-align: center; }
+.party-card img { display: block; width: 100%; aspect-ratio: 4 / 4.2; object-fit: cover; object-position: 50% 30%; }
+.party-card div { padding: 18px 22px 22px; display: grid; gap: 8px; justify-items: center; }
+.party-card h2 { margin: 0; font-size: 26px; letter-spacing: -.02em; }
+.party-card p { margin: 0; font-size: 16px; color: var(--ink2); }
+.party-card p b { color: #c2410c; }
+@media (prefers-reduced-motion: no-preference) {
+  .party-card { animation: pop .55s cubic-bezier(.2, 1.4, .4, 1) both; }
+  @keyframes pop { from { transform: scale(.6) rotate(-4deg); opacity: 0; } to { transform: none; opacity: 1; } }
+}
 
 /* surfaces */
 .card { background: var(--card); border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--shadow); padding: 18px 20px; min-width: 0; position: relative; }
@@ -192,6 +298,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
     <div class="brand"><img src="/favicon.png" alt=""><h1>토큰 트래커</h1><span id="span"></span></div>
     <div class="tools">
       <span class="tag" id="status" aria-live="polite">불러오는 중…</span>
+      <a class="btn" id="viewBtn" href="#v=rank"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 14h6M8 11v3M4.5 2h7v3.5a3.5 3.5 0 0 1-7 0zM4.5 3.5H2.5v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2"/></svg><span>랭킹</span></a>
       <button class="icon" id="refreshBtn" type="button" aria-label="로그 다시 읽기">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
       </button>
@@ -202,6 +309,47 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
   </header>
 
   <section class="limits" id="limits" aria-label="남은 한도" hidden></section>
+
+  <section class="card ratio" id="ratio-card" aria-label="쌀먹 비율" hidden>
+    <div class="ratio-l">
+      <div class="head"><span class="k">쌀먹 비율</span>
+        <div class="seg sm" id="rperiod" role="group" aria-label="쌀먹 기간"><button type="button" data-v="day">오늘</button><button type="button" data-v="week">이번 주</button><button type="button" data-v="month">이번 달</button></div>
+      </div>
+      <div class="ratio-v" id="r-v">×0</div>
+      <div class="sub" id="r-sub"></div>
+      <div class="gain" id="r-gain"></div>
+      <div class="note">같은 토큰을 API 정가로 썼다면 냈을 금액 ÷ 그 기간만큼의 구독료예요. 구독료는 하루 단위(월 × 12 / 365)로 나눠요.</div>
+    </div>
+    <div class="ratio-r">
+      <div class="rrow rh"><span>도구 · 요금제</span><span>API 환산 (세로선 = 구독료, 본전)</span><span style="text-align:right">환산 / 구독</span><span style="text-align:right">배율</span></div>
+      <div id="r-rows"></div>
+      <div class="rfoot"><span>구독료는 요금제에서 자동으로 정하고, 직접 넣은 값이 있으면 그걸 써요. Gemini는 요금제를 읽을 수 없어요.</span><button class="linkbtn" id="subEdit" type="button">구독료 수정</button></div>
+      <form class="subform" id="subForm" hidden>
+        <label>Claude ($/월)<input name="claude" type="number" min="0" step="1" placeholder="자동"></label>
+        <label>Codex ($/월)<input name="codex" type="number" min="0" step="1" placeholder="자동"></label>
+        <label>Gemini ($/월)<input name="gemini" type="number" min="0" step="1" placeholder="안 씀"></label>
+        <button class="btn primary" type="submit">저장</button>
+        <span class="note">비워 두면 요금제 가격을 써요</span>
+      </form>
+    </div>
+  </section>
+
+  <section class="rank-view" id="rank-view" aria-label="쌀숭이 랭킹" hidden>
+    <div class="card rank-card" id="rank-card"><div class="empty">불러오는 중…</div></div>
+  </section>
+
+  <div class="party" id="party" hidden role="dialog" aria-modal="true" aria-labelledby="party-t">
+    <canvas id="confetti" aria-hidden="true"></canvas>
+    <div class="party-card">
+      <img src="/ssalsoongi.jpg" alt="동전 비 속에서 덩굴에 매달려 신난 오랑우탄">
+      <div>
+        <h2 id="party-t">축하해요!</h2>
+        <p>당신은 그룹 내 <b>1등 쌀숭이</b>에요!</p>
+        <p class="note" id="party-sub"></p>
+        <button class="btn primary" id="partyClose" type="button">고마워요</button>
+      </div>
+    </div>
+  </div>
 
   <div class="card empty" id="empty-all" hidden>아직 모은 기록이 없어요. Claude Code나 Codex를 한 번 쓰고 나서 오른쪽 위 새로고침을 눌러 주세요.</div>
   <main id="main" style="display:grid;gap:16px">
@@ -290,7 +438,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
 <script src="/d3.v7.min.js"></script>
 <script>
 let DATA = { daily: [], hours: [], prices: {} };
-const st = { range: '30', tool: 'all', unit: 'tokens', model: null, project: null, hidden: new Set(), all: false };
+const st = { range: '30', tool: 'all', unit: 'tokens', model: null, project: null, hidden: new Set(), all: false, view: 'main', rp: 'month', rk: 'week' };
 try { const t = localStorage.getItem('tt-theme2'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
 
 
@@ -301,10 +449,12 @@ function readHash() {
   if (['tokens', 'cost'].includes(p.get('u'))) st.unit = p.get('u');
   if (['all', 'Claude Code', 'Codex'].includes(p.get('t'))) st.tool = p.get('t');
   st.model = p.get('m'); st.project = p.get('p');
+  st.view = p.get('v') === 'rank' ? 'rank' : 'main';
 }
 function writeHash() {
   const p = new URLSearchParams(); p.set('r', st.range); p.set('u', st.unit); p.set('t', st.tool);
   if (st.model) p.set('m', st.model); if (st.project) p.set('p', st.project);
+  if (st.view === 'rank') p.set('v', 'rank');
   try { history.replaceState(null, '', '#' + p.toString()); } catch (e) {}
 }
 readHash();
@@ -683,8 +833,8 @@ $('themeBtn').onclick = () => {
 };
 addEventListener('hashchange', () => { readHash(); render(); });
 
-function draw() { writeHash(); segs(); chips(); limitsView(); hero(); hours(); daily(); mix(); cumulative(); monthly(); models(); projects(); }
-function render() { if (!DATA.daily.length) { showEmpty(); return; } $('main').hidden = false; $('empty-all').hidden = true; draw(); }
+function draw() { writeHash(); segs(); chips(); limitsView(); ratioView(); hero(); hours(); daily(); mix(); cumulative(); monthly(); models(); projects(); }
+function render() { applyView(); if (st.view === 'rank') return; if (!DATA.daily.length) { showEmpty(); return; } $('main').hidden = false; $('empty-all').hidden = true; draw(); }
 function showEmpty() { $('main').hidden = true; $('empty-all').hidden = false; }
 
 // ---------- remaining limits (same numbers as the widget)
@@ -730,6 +880,221 @@ async function loadLimits() {
   try { const r = await fetch('/api/limits', { cache: 'no-store' }); if (r.ok) { LIMITS = await r.json(); limitsView(); } } catch (e) {}
 }
 
+// ---------- 쌀먹 비율
+const TOOLC = { claude: 'var(--claude)', codex: 'var(--codex)', gemini: 'var(--gemini)' };
+const TOOLN = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' };
+const PLABEL = { day: '오늘', week: '이번 주', month: '이번 달' };
+const xfmt = (r) => r == null ? '-' : r >= 100 ? Math.round(r).toString() : r >= 10 ? r.toFixed(1) : r.toFixed(2);
+let RATIO = null;
+function ratioView() {
+  const card = $('ratio-card');
+  const P = RATIO && RATIO.periods && RATIO.periods[st.rp];
+  const any = RATIO && Object.values(RATIO.periods || {}).some((v) => Object.keys(v.tools).length);
+  card.hidden = st.view === 'rank' || !any;
+  if (card.hidden || !P) return;
+  document.querySelectorAll('#rperiod button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.rp)));
+  $('r-v').textContent = P.ratio == null ? '×-' : '×' + xfmt(P.ratio);
+  $('r-sub').replaceChildren(`${PLABEL[st.rp]} 구독 `, el('b', '', usd(P.sub)), '로 ', el('b', '', usd(P.api)), '어치 사용');
+  const gain = P.api - P.sub, g = $('r-gain');
+  g.textContent = P.sub ? (gain >= 0 ? `${usd(gain)} 이득` : `${usd(-gain)} 덜 씀`) : '구독료를 알 수 없어요';
+  g.className = 'gain' + (gain >= 0 && P.sub ? '' : ' loss');
+  const tools = Object.entries(P.tools);
+  const mx = (d3.max(tools, ([, t]) => Math.max(t.api, t.sub)) || 1) * 1.08;
+  $('r-rows').replaceChildren(...tools.map(([src, t]) => {
+    const row = el('div', 'rrow'); const nm = el('div', 'nm'); const top = el('div'); const i = el('i'); i.style.background = TOOLC[src];
+    top.append(i, el('b', '', TOOLN[src])); if (t.plan) top.append(el('span', 'plan', t.plan));
+    nm.append(top, el('small', '', t.monthly ? `${t.from === 'config' ? '직접 넣은 값' : '요금제 가격'} $${t.monthly}/월` : '구독료 모름 · 아래에서 입력'));
+    const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (100 * t.api / mx) + '%'; f.style.background = TOOLC[src]; bar.append(f);
+    if (t.sub) { const m = el('em'); m.style.left = (100 * t.sub / mx) + '%'; m.title = '구독료 (본전)'; bar.append(m); }
+    const amt = el('span', 'amt'); amt.append(el('b', '', usd(t.api)), ' / ' + (t.sub ? usd(t.sub) : '-'));
+    row.append(nm, bar, amt, el('span', 'x' + (t.ratio == null ? ' dim' : ''), t.ratio == null ? '-' : '×' + xfmt(t.ratio)));
+    return row;
+  }));
+}
+async function loadRatio() {
+  try { const r = await fetch('/api/ratio', { cache: 'no-store' }); if (r.ok) { RATIO = await r.json(); ratioView(); } } catch (e) {}
+}
+$('rperiod').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (b) { st.rp = b.dataset.v; ratioView(); } });
+$('subEdit').onclick = () => {
+  const f = $('subForm'); f.hidden = !f.hidden;
+  if (!f.hidden && RATIO) for (const src of ['claude', 'codex', 'gemini']) { const s = RATIO.subscriptions[src]; f.elements[src].value = s && s.from === 'config' ? s.usd : ''; }
+};
+$('subForm').onsubmit = async (e) => {
+  e.preventDefault(); const f = e.target; const body = { subscription_usd_month: {} };
+  for (const src of ['claude', 'codex', 'gemini']) body.subscription_usd_month[src] = f.elements[src].value === '' ? 0 : Math.max(0, Number(f.elements[src].value));
+  try { await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (err) {}
+  f.hidden = true; loadRatio();
+};
+
+// ---------- views: dashboard / 쌀숭이 랭킹
+function applyView() {
+  const rank = st.view === 'rank';
+  $('rank-view').hidden = !rank;
+  $('main').hidden = rank || !DATA.daily.length;
+  $('empty-all').hidden = rank || !!DATA.daily.length;
+  $('limits').hidden = rank || !$('limits').children.length;
+  $('ratio-card').hidden = rank || $('ratio-card').hidden;
+  const b = $('viewBtn');
+  b.lastChild.textContent = rank ? '대시보드' : '랭킹';
+  b.querySelector('svg').innerHTML = rank ? '<path d="M10 3 5 8l5 5"/>' : '<path d="M5 14h6M8 11v3M4.5 2h7v3.5a3.5 3.5 0 0 1-7 0zM4.5 3.5H2.5v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2"/>';
+  b.setAttribute('href', rank ? '#' : '#v=rank');
+  document.title = rank ? '쌀숭이 랭킹 · 토큰 트래커' : '토큰 트래커';
+}
+$('viewBtn').onclick = (e) => {
+  e.preventDefault(); st.view = st.view === 'rank' ? 'main' : 'rank'; writeHash(); render();
+  if (st.view === 'rank') loadRanking(); else { scrollTo(0, 0); if (DATA.daily.length) draw(); }
+};
+
+// ---------- 쌀숭이 랭킹
+const AVC = ['#6d5bd0', '#0f9473', '#c2508f', '#0b8fb3', '#8f6a4d', '#b39200', '#64748b', '#d4693f'];
+const avColor = (s) => AVC[[...s].reduce((a, c) => (a * 31 + c.codePointAt(0)) >>> 0, 7) % AVC.length];
+const tierOf = (r) => r == null ? null : r >= 5 ? ['쌀숭이', 't-king'] : r >= 2 ? ['쌀먹', 't-eat'] : r >= 1 ? ['본전', 't-even'] : ['기부천사', 't-give'];
+const RLABEL = { day: '일일', week: '주간', month: '월간' };
+let RANK = null;
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  return r.json();
+}
+async function loadRanking() {
+  const card = $('rank-card');
+  if (!RANK) card.replaceChildren(el('div', 'empty', '불러오는 중…'));
+  try {
+    const r = await fetch('/api/ranking?period=' + st.rk, { cache: 'no-store' });
+    RANK = await r.json();
+  } catch (e) { RANK = { error: '트래커에 연결할 수 없어요', state: { server: true, joined: true } }; }
+  rankView();
+}
+function rankView() {
+  const card = $('rank-card'), R = RANK || {}, S = R.state || {};
+  if (!S.server) {
+    card.replaceChildren(el('h2', '', '쌀숭이 랭킹'), el('div', 'empty', '랭킹 서버가 아직 연결되지 않았어요. 업데이트되면 자동으로 열려요.'));
+    return;
+  }
+  if (!S.joined) return joinView(card, R.error && R.error !== '아직 그룹에 참가하지 않았어요' ? R.error : null);
+  const top = el('div', 'rank-top'); const h = el('div'); h.append(el('h2', '', '쌀숭이 랭킹')); top.append(h);
+  const seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', '랭킹 기간');
+  for (const p of ['day', 'week', 'month']) { const b = el('button', '', RLABEL[p]); b.type = 'button'; b.setAttribute('aria-pressed', String(p === st.rk)); b.onclick = () => { st.rk = p; loadRanking(); }; seg.append(b); }
+  top.append(seg);
+  if (R.error) { h.querySelector('h2').after(el('small', '', S.group_name || '')); card.replaceChildren(top, el('div', 'err', R.error)); return; }
+  const ms = R.members || [];
+  h.firstChild.after(el('small', '', `${R.name || S.group_name} · ${ms.length}명 · ${RLABEL[st.rk]} 쌀먹 비율 순`));
+  const best = d3.max(ms, (m) => m.ratio || 0) || 1;
+  const list = el('div', 'rank-list');
+  let rank = 0;
+  ms.forEach((m) => {
+    const has = m.ratio != null && m.current;
+    if (has) rank += 1;
+    const row = el('div', 'rk' + (m.me ? ' me' : '') + (has ? '' : ' stale'));
+    const no = el('span', 'no' + (has && rank <= 3 ? ' top' : '') + (has && rank === 1 ? ' first' : ''), has ? String(rank) : '-');
+    const who = el('div', 'who'); const av = el('div', 'av', [...m.nick][0] || '?'); av.style.background = m.me ? 'var(--ink)' : avColor(m.nick);
+    const t = el('div'); t.append(el('b', '', m.nick + (m.me ? ' (나)' : '')), el('small', '', m.plans || '요금제 정보 없음'));
+    who.append(av, t); const tr = tierOf(has ? m.ratio : null); if (tr) who.append(el('span', 'tier ' + tr[1], tr[0]));
+    const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (has ? 100 * m.ratio / best : 0) + '%'; f.style.background = rank === 1 && has ? '#c2410c' : m.me ? 'var(--ink)' : 'var(--muted)'; bar.append(f);
+    const amt = el('span', 'amt'); if (has) amt.append(el('b', '', usd(m.api)), ' / ' + usd(m.sub)); else amt.append('아직 기록 없음');
+    row.append(no, who, bar, amt, el('span', 'x', has ? '×' + xfmt(m.ratio) : ''));
+    list.append(row);
+  });
+  const meIdx = ms.findIndex((m) => m.me), me = ms[meIdx];
+  const ranked = ms.filter((m) => m.ratio != null && m.current);
+  const myRank = me && me.ratio != null && me.current ? ranked.indexOf(me) + 1 : null;
+  const side = el('aside', 'rank-side');
+  side.append(el('div', '', '내 순위'));
+  const big = el('div'); big.append(el('span', 'big', myRank ? `${myRank}위` : '-'), ` / ${ranked.length}명`); side.append(big);
+  if (myRank > 1) side.append(el('div', '', `1위까지 배율 ×${xfmt(ranked[0].ratio - me.ratio)} 차이`));
+  side.append(el('hr'));
+  const inv = el('div'); inv.append('초대 코드 '); const code = el('span', 'code', S.code); inv.append(code); side.append(inv);
+  const copy = el('button', 'btn', '초대 코드 복사'); copy.type = 'button';
+  copy.onclick = async () => { try { await navigator.clipboard.writeText(S.code); copy.textContent = '복사했어요'; } catch (e) { copy.textContent = S.code; } setTimeout(() => { copy.textContent = '초대 코드 복사'; }, 1800); };
+  side.append(copy, el('hr'));
+  const nf = el('form', 'nickf');
+  const nl = el('label', '', '닉네임'); const ni = el('input'); ni.name = 'nick'; ni.maxLength = 24; ni.value = S.nick || ''; nl.append(ni);
+  const ns = el('button', 'btn', '닉네임 바꾸기'); ns.type = 'submit'; nf.append(nl, ns);
+  nf.onsubmit = async (e) => { e.preventDefault(); await post('/api/ranking/nick', { nick: ni.value }); loadRanking(); };
+  side.append(nf, el('hr'));
+  side.append(el('b', '', '랭킹에 공유되는 것'), el('div', '', '닉네임, 요금제 이름, 기간별 API 환산 금액과 구독료 몫'), el('div', 'note', '대화 내용, 프로젝트, 모델별 기록은 공유하지 않아요.'));
+  const lv = el('button', 'linkbtn', '그룹 나가기'); lv.type = 'button';
+  lv.onclick = async () => { if (lv.dataset.sure) { await post('/api/ranking/leave'); RANK = null; loadRanking(); } else { lv.dataset.sure = '1'; lv.textContent = '정말 나갈까요? 한 번 더 누르면 나가요'; } };
+  side.append(lv);
+  const wrap = el('div', 'rank-wrap'); wrap.append(list, side);
+  const lg = el('div', 'legend2'); for (const [n, c, t] of [['쌀숭이', 't-king', '×5 이상'], ['쌀먹', 't-eat', '×2 이상'], ['본전', 't-even', '×1 이상'], ['기부천사', 't-give', '×1 미만']]) { const sp = el('span'); sp.append(el('span', 'tier ' + c, n), ' ' + t); lg.append(sp); }
+  card.replaceChildren(top, wrap, lg);
+  if (myRank === 1 && ranked.length >= 2) celebrate(S.code, R.period, R.window, me.ratio);
+}
+function joinView(card, error) {
+  const top = el('div', 'rank-top'); const h = el('div'); h.append(el('h2', '', '쌀숭이 랭킹'), el('small', '', '친구들과 쌀먹 비율 겨루기')); top.append(h);
+  const forms = el('div', 'rank-forms');
+  const mk = (title, fields, label, path) => {
+    const f = el('form', 'rank-form'); f.append(el('h3', '', title));
+    for (const [name, text, ph] of fields) { const l = el('label', '', text); const i = el('input'); i.name = name; i.placeholder = ph; i.maxLength = name === 'code' ? 9 : name === 'group_name' ? 40 : 24; l.append(i); f.append(l); }
+    const b = el('button', 'btn primary', label); b.type = 'submit'; f.append(b);
+    f.onsubmit = async (e) => {
+      e.preventDefault(); b.disabled = true; const body = Object.fromEntries(new FormData(f));
+      let res; try { res = await post(path, body); } catch (err) { res = { error: '트래커에 연결할 수 없어요' }; }
+      b.disabled = false;
+      if (res.error) { const old = f.querySelector('.err'); if (old) old.remove(); f.append(el('div', 'err', res.error)); return; }
+      RANK = null; loadRanking();
+    };
+    return f;
+  };
+  forms.append(
+    mk('새 그룹 만들기', [['group_name', '그룹 이름', '예: 연구실 쌀숭이들'], ['nick', '내 닉네임', '랭킹에 보일 이름']], '만들기', '/api/ranking/create'),
+    mk('초대 코드로 참가', [['code', '초대 코드', 'ABCD-EF23'], ['nick', '내 닉네임', '랭킹에 보일 이름']], '참가하기', '/api/ranking/join'),
+  );
+  const note = el('div', 'note', '공유되는 것: 닉네임, 요금제 이름, 기간별 API 환산 금액과 구독료 몫. 대화 내용, 프로젝트, 모델별 기록은 이 PC 밖으로 나가지 않아요.');
+  card.replaceChildren(...[top, error ? el('div', 'err', error) : null, forms, note].filter(Boolean));
+}
+
+// ---------- 1등 축하: 팡파레 + 꽃가루
+function celebrate(code, period, win, ratio) {
+  const key = `tt-party:${code}:${period}:${win}`;
+  try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) {}
+  $('party-sub').textContent = `${RLABEL[period]} 쌀먹 ×${xfmt(ratio)}`;
+  $('party').hidden = false; $('partyClose').focus();
+  fanfare();
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) confetti();
+}
+function closeParty() { $('party').hidden = true; }
+$('partyClose').onclick = closeParty;
+$('party').addEventListener('click', (e) => { if (e.target === $('party')) closeParty(); });
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('party').hidden) closeParty(); });
+function fanfare() {
+  try {
+    const A = new (window.AudioContext || window.webkitAudioContext)();
+    if (A.state === 'suspended') A.resume();
+    const master = A.createGain(); master.gain.value = 0.16; master.connect(A.destination);
+    const t0 = A.currentTime + 0.05;
+    const note = (f, at, len) => {
+      for (const [type, det] of [['sawtooth', 0], ['square', 7]]) {
+        const o = A.createOscillator(), g = A.createGain(), lp = A.createBiquadFilter();
+        o.type = type; o.frequency.value = f; o.detune.value = det; lp.type = 'lowpass'; lp.frequency.value = 2600;
+        g.gain.setValueAtTime(0, t0 + at); g.gain.linearRampToValueAtTime(type === 'square' ? .35 : .7, t0 + at + .03);
+        g.gain.setValueAtTime(type === 'square' ? .3 : .6, t0 + at + len * .7); g.gain.exponentialRampToValueAtTime(.001, t0 + at + len);
+        o.connect(lp); lp.connect(g); g.connect(master); o.start(t0 + at); o.stop(t0 + at + len + .05);
+      }
+    };
+    // ta-ta-ta-taaa, ta-taaaa
+    [[523.25, 0, .16], [523.25, .18, .16], [523.25, .36, .16], [698.46, .54, .5], [622.25, 1.08, .18], [698.46, 1.28, 1.2]].forEach(([f, a, l]) => note(f, a, l));
+    [[349.23, 1.28, 1.2], [440, 1.28, 1.2], [880, 1.28, 1.2]].forEach(([f, a, l]) => note(f, a, l));
+    setTimeout(() => A.close(), 3200);
+  } catch (e) {}
+}
+function confetti() {
+  const cv = $('confetti'), ctx = cv.getContext('2d'), dpr = devicePixelRatio || 1;
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; ctx.scale(dpr, dpr);
+  const cols = ['#f0883e', '#e3b341', '#3fb950', '#5b9cf5', '#c2508f', '#ffffff', '#d9622b'];
+  const ps = Array.from({ length: 180 }, () => ({
+    x: innerWidth / 2 + (Math.random() - .5) * 120, y: innerHeight * .45, vx: (Math.random() - .5) * 16, vy: -Math.random() * 15 - 5,
+    w: 5 + Math.random() * 6, h: 8 + Math.random() * 8, r: Math.random() * 6, vr: (Math.random() - .5) * .4, c: cols[Math.floor(Math.random() * cols.length)],
+  }));
+  const end = performance.now() + 4200;
+  const step = (now) => {
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    for (const p of ps) { p.vy += .32; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore(); }
+    if (now < end && !$('party').hidden) requestAnimationFrame(step); else ctx.clearRect(0, 0, innerWidth, innerHeight);
+  };
+  requestAnimationFrame(step);
+}
+
 // ---------- live data from the local tracker
 const tfmt = d3.timeFormat('%-m/%-d %H:%M');
 async function load(quiet) {
@@ -748,10 +1113,10 @@ async function load(quiet) {
 $('refreshBtn').onclick = async () => {
   const b = $('refreshBtn'); b.disabled = true; $('status').textContent = '다시 읽는 중…';
   try { await fetch('/api/refresh', { method: 'POST' }); } catch (e) {}
-  await Promise.all([load(), loadLimits()]); b.disabled = false;
+  await Promise.all([load(), loadLimits(), loadRatio()]); if (st.view === 'rank') await loadRanking(); b.disabled = false;
 };
-load(); loadLimits();
-setInterval(() => { if (!document.hidden) { load(true); loadLimits(); } }, 60000);
+load(); loadLimits(); loadRatio(); applyView(); if (st.view === 'rank') loadRanking();
+setInterval(() => { if (!document.hidden) { load(true); loadLimits(); loadRatio(); if (st.view === 'rank') loadRanking(); } }, 60000);
 document.querySelectorAll('.card').forEach((c, i) => { c.classList.add('fade'); c.style.animationDelay = Math.min(i, 8) * 30 + 'ms'; });
 let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
 </script>

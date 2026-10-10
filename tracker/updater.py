@@ -39,6 +39,11 @@ def _tuple(v):
     return tuple(out)
 
 
+def is_frozen():
+    """The packaged macOS app (PyInstaller) can't overwrite itself; it offers the new DMG instead."""
+    return bool(getattr(sys, "frozen", False))
+
+
 def is_git_checkout():
     return (paths.APP_ROOT / ".git").exists()
 

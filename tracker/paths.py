@@ -1,11 +1,16 @@
 """Where things live: source log folders, app data folder, config."""
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 HOME = Path.home()
-APP_ROOT = Path(__file__).resolve().parent.parent
-APP_DIR = Path(__file__).resolve().parent.parent
+if getattr(sys, "frozen", False):  # packaged app: data files sit next to the bundled code
+    APP_ROOT = APP_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+else:
+    APP_ROOT = Path(__file__).resolve().parent.parent
+    APP_DIR = Path(__file__).resolve().parent.parent
 
 
 def data_dir() -> Path:
@@ -14,6 +19,8 @@ def data_dir() -> Path:
         d = Path(base)
     elif os.name == "nt":
         d = Path(os.environ.get("LOCALAPPDATA", HOME / "AppData" / "Local")) / "TokenTracker"
+    elif sys.platform == "darwin":
+        d = HOME / "Library" / "Application Support" / "TokenTracker"
     else:
         d = HOME / ".local" / "share" / "tokentracker"
     d.mkdir(parents=True, exist_ok=True)
@@ -52,6 +59,20 @@ def claude_credentials_file():
     return None
 
 
+def claude_keychain_oauth():
+    """macOS: Claude Code keeps its login in the Keychain instead of .credentials.json."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        r = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode == 0 and r.stdout.strip():
+            return json.loads(r.stdout).get("claudeAiOauth") or {}
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return None
+
+
 def codex_root() -> Path:
     v = os.environ.get("CODEX_HOME")
     return Path(v) if v else HOME / ".codex"
@@ -74,13 +95,16 @@ DEFAULT_CONFIG = {
     "port": 8765,
     "scan_interval_sec": 60,
     "limits_interval_sec": 300,
-    # Monthly subscription you actually pay, per source (USD). 0 = hide comparison.
+    # Monthly subscription you pay, per source (USD). 0 = use the detected plan's list price
+    # (Claude Pro $20, Codex Plus $20…). Gemini can't be detected, so set it here to count it.
     "subscription_usd_month": {"claude": 0, "codex": 0, "gemini": 0},
     "widget": {"x": None, "y": None, "opacity": 0.96, "topmost": True,
                "taskbar": True,  # taskbar button whose icon shows the lowest remaining %
                "show": ["claude", "codex"],  # tools shown in the widget (Gemini has no limits)
                "font": "", "number_font": ""},  # "" = Segoe UI Variable (Segoe UI on Windows 10)
     "artifact_url": None,
+    # group ranking (쌀숭이 랭킹); filled in from the dashboard's ranking page
+    "ranking": {"server": "", "code": None, "group_name": None, "member_id": None, "token": None, "nick": ""},
     "extra_paths": {"claude": [], "codex": [], "gemini": []},
 }
 
