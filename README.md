@@ -28,15 +28,18 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 
 ## 위젯 (Usage Limits)
 
-- 도구와 요금제별로 5h / Weekly 한도가 몇 % 남았는지, 언제 리셋되는지 (`10/10 · Resets in 2h 13m`)
-- 막대 = 남은 양, 색 = 사용량 (초록 < 50% < 노랑 < 75% < 주황 < 90% < 빨강)
-- ▾/▸ 자세히·간단히 · ⟳ 즉시 조회 · ▤ 대시보드 열기 · ✕ 종료 · 제목줄 드래그로 이동 · 우클릭 메뉴
+- 도구와 요금제별로 5h / Weekly 한도가 몇 % 남았는지, 언제 리셋되는지 (`Resets in 2h 13m`)
+- 막대 = 남은 양. 넉넉할 땐 도구 색(Claude 주황, Codex 파랑), 절반 넘게 쓰면 노랑 → 주황(75%) → 빨강(90%)
+- ▤ 대시보드 · ⟳ 즉시 조회 · ▾/▸ 자세히·간단히 · – 작업 표시줄로 내리기 · ✕ 종료 · 제목줄 드래그로 이동 · 우클릭 메뉴
+- **작업 표시줄에도 떠요.** 아이콘이 가장 빠듯한 한도의 남은 %를 게이지와 숫자로 보여 주고, 마우스를 올리면 `Claude 72% · Codex 88%`처럼 도구별 값이 보여요. 위젯을 –로 내려 두고 작업 표시줄만 봐도 돼요. 끄려면 설정에 `"widget": {"taskbar": false}`.
+- Windows 11에서는 모서리가 둥글게 그려져요.
 - Claude 한도는 5분마다 Anthropic에 직접 조회하고, Codex 한도는 Codex가 마지막 응답 때 로그에 남긴 값이에요 (Codex를 쓰지 않는 동안은 갱신되지 않음).
 
 ## 대시보드
 
 위젯의 ▤ 버튼, 또는 `python app.py --dashboard`. 주소는 http://127.0.0.1:8765/ 이고 내 PC에서만 열려요.
 
+- 맨 위에 위젯과 같은 남은 한도 카드
 - 총 사용 토큰, 최근 30일 토큰, 최근 30일 API 환산 비용
 - 요일과 시간대별 사용량, 일별 모델별 토큰
 - 입력·출력·캐시 비율, 캐시 적중률, 캐시로 아낀 비용
@@ -61,6 +64,7 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 
 - `widget.show`: 위젯에 보일 도구 (기본 `["claude", "codex"]`)
 - `widget.font`, `widget.number_font`: 글꼴 (기본 `Calibri`)
+- `widget.taskbar`: 작업 표시줄 버튼과 % 아이콘 (기본 `true`)
 - `extra_paths`: 기본 위치 밖의 로그 폴더 추가. 예: `"claude": ["D:/backup/.claude/projects"]`
 - `port` (8765), `scan_interval_sec` (60), `limits_interval_sec` (300)
 - 환경변수 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_HOME`, `TOKENTRACKER_HOME`도 따라가요.

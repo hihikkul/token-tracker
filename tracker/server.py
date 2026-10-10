@@ -34,6 +34,8 @@ def make_handler(engine):
                 return self._send(200, (WEB / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/d3.v7.min.js":
                 return self._send(200, (WEB / "d3.v7.min.js").read_bytes(), "text/javascript; charset=utf-8")
+            if u.path in ("/favicon.png", "/favicon.ico"):
+                return self._send(200, (paths.APP_DIR / "assets" / "token-tracker.png").read_bytes(), "image/png")
             if u.path == "/api/data":
                 from .export import build
                 data = build(engine.db)

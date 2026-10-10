@@ -3,7 +3,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>토큰 트래커</title>
-<meta name="theme-color" content="#f7f7f5">
+<meta name="theme-color" content="#f6f6f4">
+<link rel="icon" type="image/png" href="/favicon.png">
 <style>
 /* Design read: personal usage analytics, white ground, Vercel/Linear restraint.
    Dials: VARIANCE 5, MOTION 3, DENSITY 6.
@@ -12,12 +13,14 @@
    Radius scale: cards 12, inner tiles 6, controls full pill. Hairline borders plus a layered shadow. */
 :root {
   color-scheme: light;
-  --page: #f7f7f5; --card: #ffffff; --card2: #f2f2ef; --line: #ebebe7; --edge: rgba(20, 20, 15, .09);
+  --page: #f6f6f4; --card: #ffffff; --card2: #f3f3f0; --line: #ecece8; --edge: rgba(20, 20, 15, .09);
   --ink: #18181b; --ink2: #4b4b52; --muted: #7a7a82;
   --accent: #1d4ed8; --accent-soft: rgba(29, 78, 216, .08);
     --shadow: 0 1px 2px rgba(24, 24, 27, .05), 0 8px 24px -14px rgba(24, 24, 27, .14);
   --s1: var(--accent); --s2: #6d5bd0; --s3: #0f9473; --s4: #c2508f; --s5: #b39200; --s6: #64748b; --s7: #0b8fb3; --s8: #8f6a4d; --s9: #b4b4ae;
   --c1: #d4693f; --c2: #eba07a; --c3: #a8502e;
+  --claude: #d9622b; --codex: #2f6fdb; --gemini: #128a62;
+  --good: #1f9d55; --warning: #c98a00; --serious: #e0662f; --critical: #d63a3a; --track: #eeeeea;
   --font: Calibri, "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
   --mono: "Cascadia Mono", Consolas, "SF Mono", ui-monospace, monospace;
 }
@@ -26,6 +29,8 @@
   --page: #111113; --card: #18181b; --card2: #202024; --line: #2a2a2e; --edge: rgba(255, 255, 255, .08);
   --ink: #f4f4f5; --ink2: #b9b9c0; --muted: #85858d;
   --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 8px 24px -12px rgba(0, 0, 0, .5);
+  --claude: #e8794a; --codex: #5b9cf5; --gemini: #34c08b; --track: #26262b;
+  --good: #3fb950; --warning: #e3b341; --serious: #f0883e; --critical: #f85149;
 }
 * { box-sizing: border-box; }
 html { -webkit-tap-highlight-color: transparent; }
@@ -39,7 +44,8 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 
 /* header */
 .top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
-.brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand img { width: 30px; height: 30px; border-radius: 8px; flex: none; }
 .brand h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
 .brand span { color: var(--muted); font-size: 13.5px; }
 .tools { display: flex; gap: 8px; align-items: center; }
@@ -48,6 +54,24 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .icon:disabled { opacity: .5; cursor: progress; }
 .icon:hover { color: var(--ink); background: var(--card2); }
 .icon svg { width: 16px; height: 16px; }
+
+/* remaining limits, mirrors the widget */
+.limits { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.limits[hidden] { display: none; }
+.lim { padding: 16px 20px 18px; }
+.lim-h { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.lim-h i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.lim-h b { font-size: 15px; }
+.lim-h .plan { font-size: 11.5px; font-weight: 700; color: var(--ink2); background: var(--card2); border: 1px solid var(--edge); border-radius: 999px; padding: 1px 8px; }
+.lim-h .asof { margin-left: auto; font-size: 12px; color: var(--muted); }
+.lw { margin-top: 12px; }
+.lw-r { display: flex; align-items: baseline; gap: 10px; }
+.lw-r span { font-size: 13px; color: var(--ink2); }
+.lw-r small { font-size: 12.5px; color: var(--muted); }
+.lw-r strong { margin-left: auto; font-size: 22px; letter-spacing: -.02em; line-height: 1; }
+.lw .track { margin-top: 7px; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.lw .track i { display: block; height: 100%; border-radius: 3px; transition: width .4s cubic-bezier(.16, 1, .3, 1); }
+.lim .msg { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
 
 /* surfaces */
 .card { background: var(--card); border: 1px solid var(--edge); border-radius: 12px; box-shadow: var(--shadow); padding: 18px 20px; min-width: 0; position: relative; }
@@ -165,7 +189,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
 <a class="skip" href="#main">본문으로 건너뛰기</a>
 <div class="wrap">
   <header class="top">
-    <div class="brand"><h1>토큰 트래커</h1><span id="span"></span></div>
+    <div class="brand"><img src="/favicon.png" alt=""><h1>토큰 트래커</h1><span id="span"></span></div>
     <div class="tools">
       <span class="tag" id="status" aria-live="polite">불러오는 중…</span>
       <button class="icon" id="refreshBtn" type="button" aria-label="로그 다시 읽기">
@@ -176,6 +200,8 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
       </button>
     </div>
   </header>
+
+  <section class="limits" id="limits" aria-label="남은 한도" hidden></section>
 
   <div class="card empty" id="empty-all" hidden>아직 모은 기록이 없어요. Claude Code나 Codex를 한 번 쓰고 나서 오른쪽 위 새로고침을 눌러 주세요.</div>
   <main id="main" style="display:grid;gap:16px">
@@ -657,9 +683,52 @@ $('themeBtn').onclick = () => {
 };
 addEventListener('hashchange', () => { readHash(); render(); });
 
-function draw() { writeHash(); segs(); chips(); hero(); hours(); daily(); mix(); cumulative(); monthly(); models(); projects(); }
+function draw() { writeHash(); segs(); chips(); limitsView(); hero(); hours(); daily(); mix(); cumulative(); monthly(); models(); projects(); }
 function render() { if (!DATA.daily.length) { showEmpty(); return; } $('main').hidden = false; $('empty-all').hidden = true; draw(); }
 function showEmpty() { $('main').hidden = true; $('empty-all').hidden = false; }
+
+// ---------- remaining limits (same numbers as the widget)
+const LNAME = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini' };
+const wl = (s) => s.replace('5시간', '5h').replace('주간', 'Weekly').replace('시간', 'h').replace('일', 'd');
+const sevOf = (u) => u >= 90 ? 'critical' : u >= 75 ? 'serious' : u >= 50 ? 'warning' : 'good';
+function untilTxt(ts) {
+  let s = Math.max(0, Math.floor(ts - Date.now() / 1000)); const d = Math.floor(s / 86400); s %= 86400; const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${Math.max(m, 1)}m`;
+}
+function resetTxt(ts) {
+  const t = new Date(ts * 1000);
+  return ts - Date.now() / 1000 >= 86400 ? `Resets in ${untilTxt(ts)} · ${t.getMonth() + 1}/${t.getDate()}(${dayName(t)})` : `Resets in ${untilTxt(ts)}`;
+}
+let LIMITS = {};
+function limitsView() {
+  const box = $('limits'); const cards = [];
+  for (const src of ['claude', 'codex', 'gemini']) {
+    const l = LIMITS[src] || {};
+    const accts = l.accounts && l.accounts.length ? l.accounts : (l.windows && l.windows.length ? [{ plan: l.plan, windows: l.windows, fetched_at: l.fetched_at }] : []);
+    if (st.tool !== 'all' && LNAME[src] !== st.tool && !(src === 'claude' && st.tool === 'Claude Code')) continue;
+    for (const a of accts) {
+      const c = el('section', 'card lim'); const h = el('div', 'lim-h'); const dot = el('i'); dot.style.background = `var(--${src})`;
+      h.append(dot, el('b', '', LNAME[src])); if (a.plan) h.append(el('span', 'plan', a.plan));
+      if (a.fetched_at) h.append(el('span', 'asof', tfmt(new Date(a.fetched_at * 1000)) + ' 기준'));
+      c.append(h);
+      for (const w of a.windows.slice(0, 3)) {
+        const used = Number(w.used_percent), left = 100 - used, sv = sevOf(used);
+        const row = el('div', 'lw'); const r = el('div', 'lw-r');
+        r.append(el('span', '', wl(w.label)), el('small', '', w.resets_at ? resetTxt(w.resets_at) : (w.note || '')));
+        const big = el('strong', '', Math.round(left) + '%'); if (used >= 75) big.style.color = `var(--${sv})`; r.append(big);
+        const tr = el('div', 'track'); const fill = el('i'); fill.style.width = Math.max(0, Math.min(100, left)) + '%';
+        fill.style.background = used < 50 ? `var(--${src})` : `var(--${sv})`; tr.append(fill);
+        row.append(r, tr); c.append(row);
+      }
+      if (['rate_limited', 'offline', 'auth', 'expired', 'error'].includes(l.status) && l.message) c.append(el('div', 'msg', l.message));
+      cards.push(c);
+    }
+  }
+  box.replaceChildren(...cards); box.hidden = !cards.length;
+}
+async function loadLimits() {
+  try { const r = await fetch('/api/limits', { cache: 'no-store' }); if (r.ok) { LIMITS = await r.json(); limitsView(); } } catch (e) {}
+}
 
 // ---------- live data from the local tracker
 const tfmt = d3.timeFormat('%-m/%-d %H:%M');
@@ -679,10 +748,10 @@ async function load(quiet) {
 $('refreshBtn').onclick = async () => {
   const b = $('refreshBtn'); b.disabled = true; $('status').textContent = '다시 읽는 중…';
   try { await fetch('/api/refresh', { method: 'POST' }); } catch (e) {}
-  await load(); b.disabled = false;
+  await Promise.all([load(), loadLimits()]); b.disabled = false;
 };
-load();
-setInterval(() => { if (!document.hidden) load(true); }, 60000);
+load(); loadLimits();
+setInterval(() => { if (!document.hidden) { load(true); loadLimits(); } }, 60000);
 document.querySelectorAll('.card').forEach((c, i) => { c.classList.add('fade'); c.style.animationDelay = Math.min(i, 8) * 30 + 'ms'; });
 let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
 </script>
