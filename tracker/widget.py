@@ -516,6 +516,13 @@ class Widget:
         # The tightest applicable quota limits use, even if 5h is still available.
         return max(wins, key=lambda w: float(w.get('used_percent') or 0)) if wins else None
 
+    @staticmethod
+    def _tip_windows(src, wins):
+        if src not in ('antigravity', 'gemini') or not wins:
+            return wins
+        tightest = max(wins, key=lambda w: float(w.get('used_percent') or 0))
+        return [dict(tightest, label='Lowest remaining')]
+
     # ------------------------------------------------------------------ draw
     def _tick(self):
         snap = self.engine.snapshot
@@ -671,7 +678,7 @@ class Widget:
                 if not wins:
                     lab(inner, STATUS.get(lim.get("status"), "No data yet"), C["muted"], 9, anchor="w")
                     continue
-                for w in wins:
+                for w in self._tip_windows(src, wins):
                     used = float(w["used_percent"])
                     row = tk.Frame(inner, bg=C["tip"])
                     row.pack(fill="x", pady=(3, 0))
@@ -680,6 +687,11 @@ class Widget:
                     note = reset_in(w["resets_at"]) if w.get("resets_at") else ("Reset" if w.get("note") else "")
                     lab(row, note, C["muted"], 9, side="left")
                     lab(row, f"{100 - used:.0f}%", num_color(used), 10, True, font=NUM_FONT, side="right")
+                if src in ('antigravity', 'gemini'):
+                    detail = lab(inner, f"{len(wins)} models · View details in dashboard", C['ink2'], 8,
+                                 anchor='w', pady=(3, 0))
+                    detail.configure(cursor='hand2')
+                    detail.bind('<Button-1>', lambda event: self.open_dashboard())
                 if src == "codex" and fetched and time.time() - fetched > 3600:
                     hrs = int((time.time() - fetched) // 3600)
                     lab(inner, f"From your last Codex use, {hrs}h ago" if hrs < 48 else
