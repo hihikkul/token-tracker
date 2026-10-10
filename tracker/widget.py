@@ -11,7 +11,7 @@ import time
 import tkinter as tk
 import webbrowser
 
-from . import paths
+from . import paths, updater
 
 C = {
     "bg": "#1a1a19", "line": "#2c2c2a", "ink": "#ffffff", "ink2": "#c3c2b7", "muted": "#898781",
@@ -103,6 +103,8 @@ class Widget:
         self._last_draw = 0
         self._last_min = None
         self.root.after(300, self._tick)
+        if self.cfg.get("auto_update", True):
+            self.root.after(20_000, self._auto_update)
 
     # ---------------------------------------------------------------- chrome
     def _build_header(self):
@@ -135,9 +137,12 @@ class Widget:
         m.add_command(label="지금 새로고침", command=self.refresh)
         m.add_command(label="간단히 / 자세히", command=self.toggle_compact)
         m.add_command(label="항상 위 켜기/끄기", command=self.toggle_topmost)
+        m.add_command(label="업데이트 확인", command=lambda: self._update(manual=True))
         m.add_separator()
         m.add_command(label="설정 폴더 열기", command=lambda: webbrowser.open(paths.data_dir().as_uri()))
         m.add_command(label="종료", command=self.quit)
+        m.add_separator()
+        m.add_command(label=f"token-tracker v{updater.local_version()}", state="disabled")
         self.menu = m
 
     def _popup(self, e):
@@ -173,6 +178,48 @@ class Widget:
         self.root.attributes("-topmost", v)
         self.cfg["widget"]["topmost"] = v
         paths.save_config(self.cfg)
+
+    # ---------------------------------------------------------------- update
+    def _auto_update(self):
+        self._update(manual=False)
+        hours = float(self.cfg.get("update_check_hours", 6))
+        self.root.after(int(hours * 3600 * 1000), self._auto_update)
+
+    def _note(self, text, ms=6000):
+        self.sub.configure(text=text)
+        self.root.after(ms, lambda: self.sub.configure(text="") if self.sub.cget("text") == text else None)
+
+    def _update(self, manual):
+        if updater.is_git_checkout():
+            if manual:
+                self._note("git으로 받은 폴더예요. git pull로 업데이트하세요")
+            return
+        if manual:
+            self.sub.configure(text="확인 중…")
+
+        def work():
+            try:
+                new = updater.check()
+                if not new:
+                    if manual:
+                        self.root.after(0, lambda: self._note(f"최신 버전이에요 (v{updater.local_version()})"))
+                    return
+                self.root.after(0, lambda: self.sub.configure(text=f"v{new} 업데이트 중…"))
+                updater.apply(new)
+                self.root.after(0, self._restart)
+            except Exception as e:  # network down, GitHub busy, files locked…
+                if manual:
+                    msg = str(e) or e.__class__.__name__
+                    self.root.after(0, lambda: self._note(f"업데이트 실패: {msg[:40]}", 10000))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _restart(self):
+        try:
+            updater.restart()
+        except OSError:
+            self._note("새 버전을 받았어요. 다시 켜면 적용돼요", 15000)
+            return
+        self.quit()
 
     def quit(self):
         self.engine.stop()

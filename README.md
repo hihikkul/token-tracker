@@ -24,7 +24,7 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 
 압축을 푼 폴더는 지우거나 옮기지 마세요. 아이콘이 그 폴더를 가리켜요. 옮겼다면 `install.bat`을 다시 실행하면 돼요.
 
-업데이트할 때는 위젯을 끄고(✕) 새로 받은 파일을 같은 폴더에 덮어쓴 뒤 아이콘으로 다시 켜면 돼요. 모은 기록은 `%LOCALAPPDATA%\TokenTracker`에 따로 있어서 그대로 남아요.
+**업데이트는 자동이에요.** 위젯이 켜져 있으면 시작 직후와 6시간마다 GitHub에 새 버전이 있는지 보고, 있으면 받아서 스스로 다시 켜져요. 바로 확인하려면 위젯 우클릭 → *업데이트 확인*. 모은 기록과 설정은 `%LOCALAPPDATA%\TokenTracker`에 따로 있어서 그대로 남아요. 끄려면 설정에 `"auto_update": false` (git clone으로 받았다면 자동 업데이트 대신 `git pull`).
 
 ## 위젯 (Usage Limits)
 

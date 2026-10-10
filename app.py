@@ -75,6 +75,7 @@ def main():
     ap.add_argument("--install", action="store_true", help="바탕화면·시작 메뉴에 아이콘 만들기 (Windows)")
     ap.add_argument("--startup", action="store_true", help="--install과 함께: 로그인할 때 자동 실행")
     ap.add_argument("--uninstall", action="store_true", help="만든 아이콘 지우기")
+    ap.add_argument("--wait-port", action="store_true", help=argparse.SUPPRESS)  # after self-update
     a = ap.parse_args()
 
     if a.install:
@@ -96,6 +97,11 @@ def main():
         return
 
     port = a.port or paths.load_config().get("port", 8765)
+    if a.wait_port:  # the old copy is still closing after an update
+        for _ in range(30):
+            if not already_running(port):
+                break
+            time.sleep(0.5)
     if already_running(port):  # second launch: just open the dashboard
         webbrowser.open(f"http://127.0.0.1:{port}/")
         return
