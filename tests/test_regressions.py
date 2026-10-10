@@ -31,6 +31,16 @@ class Regressions(unittest.TestCase):
         self.assertFalse(sources.connected({'status': 'unsupported'}))
         self.assertTrue(sources.connected({'status': 'offline', 'windows': [{'used_percent': 10}]}))
 
+    def test_taskbar_ignores_disconnected_cached_quotas(self):
+        bar = widget.Widget.__new__(widget.Widget)
+        bar.show = ['gemini']
+        bar.live_icon = False
+        from unittest.mock import Mock
+        bar.root = Mock()
+        bar._taskbar_status({'gemini': {'status': 'no_credentials',
+                                      'windows': [{'label': 'Model quota', 'used_percent': 100}]}})
+        bar.root.title.assert_called_once_with('Token Tracker')
+
     def test_explicit_calibri_is_preserved(self):
         with patch.object(widget.tkfont, 'families', return_value=('Calibri', 'Segoe UI Variable Text')):
             self.assertEqual(widget.pick_fonts(None, 'Calibri', 'Calibri'), ('Calibri', 'Calibri'))

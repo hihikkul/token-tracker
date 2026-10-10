@@ -697,7 +697,7 @@ class Widget:
         """Title lists each tool's 5h remaining; the icon shows the lowest one as a gauge."""
         parts, worst = [], None
         for src in NAMES:
-            if src not in self.show:
+            if src not in self.show or not connected(limits.get(src) or {}):
                 continue
             w = self._five_hour(limits.get(src) or {})
             if not w:
