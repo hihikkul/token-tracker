@@ -24,15 +24,16 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 
 압축을 푼 폴더는 지우거나 옮기지 마세요. 아이콘이 그 폴더를 가리켜요. 옮겼다면 `install.bat`을 다시 실행하면 돼요.
 
-**업데이트는 자동이에요.** 위젯이 켜져 있으면 시작 직후와 6시간마다 GitHub에 새 버전이 있는지 보고, 있으면 받아서 스스로 다시 켜져요. 바로 확인하려면 위젯 우클릭 → *업데이트 확인*. 모은 기록과 설정은 `%LOCALAPPDATA%\TokenTracker`에 따로 있어서 그대로 남아요. 끄려면 설정에 `"auto_update": false` (git clone으로 받았다면 자동 업데이트 대신 `git pull`).
+**업데이트는 자동이에요.** 위젯이 켜져 있으면 시작 직후와 1시간마다 GitHub에 새 버전이 있는지 보고, 있으면 받아서 스스로 다시 켜져요. 따로 누를 건 없어요. 모은 기록과 설정은 `%LOCALAPPDATA%\TokenTracker`에 따로 있어서 그대로 남아요. 끄려면 설정에 `"auto_update": false` (git clone으로 받았다면 자동 업데이트 대신 `git pull`).
 
 ## 위젯 (Usage Limits)
 
-- 도구와 요금제별로 5h / Weekly 한도가 몇 % 남았는지, 언제 리셋되는지 (`Resets in 2h 13m`)
-- 막대 = 남은 양. 넉넉할 땐 도구 색(Claude 주황, Codex 파랑), 절반 넘게 쓰면 노랑 → 주황(75%) → 빨강(90%)
-- ▤ 대시보드 · ⟳ 즉시 조회 · ▾/▸ 자세히·간단히 · – 작업 표시줄로 내리기 · ✕ 종료 · 제목줄 드래그로 이동 · 우클릭 메뉴
-- **작업 표시줄에도 떠요.** 아이콘이 가장 빠듯한 한도의 남은 %를 게이지와 숫자로 보여 주고, 마우스를 올리면 `Claude 72% · Codex 88%`처럼 도구별 값이 보여요. 위젯을 –로 내려 두고 작업 표시줄만 봐도 돼요. 끄려면 설정에 `"widget": {"taskbar": false}`.
-- Windows 11에서는 모서리가 둥글게 그려져요.
+- 화면 구석에 작업 표시줄 높이의 납작한 막대 하나로 떠요: `◔ Claude 72%  │  ◕ Codex 88%` (각 도구의 **5시간 한도**에서 남은 양)
+- 게이지 색: 넉넉할 땐 도구 색(Claude 주황, Codex 파랑), 절반 넘게 쓰면 노랑 → 주황(75%) → 빨강(90%)
+- 마우스를 올리면 5h / Weekly 등 모든 한도와 리셋까지 남은 시간이 보여요
+- 드래그로 이동 · 더블클릭으로 대시보드 · 우클릭 메뉴 (Open Dashboard, Refresh Now, Minimize to Taskbar, Always on Top, Quit)
+- **작업 표시줄에도 떠요.** 아이콘이 가장 빠듯한 5h 남은 %를 게이지와 숫자로 보여 주고, 마우스를 올리면 `Claude 72% · Codex 88% (5h)`가 보여요. 끄려면 설정에 `"widget": {"taskbar": false}`.
+- 글꼴은 Windows 기본 Segoe UI Variable(Windows 10은 Segoe UI)이라 따로 설치할 게 없어요.
 - Claude 한도는 5분마다 Anthropic에 직접 조회하고, Codex 한도는 Codex가 마지막 응답 때 로그에 남긴 값이에요 (Codex를 쓰지 않는 동안은 갱신되지 않음).
 
 ## 대시보드
@@ -63,7 +64,7 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 `%LOCALAPPDATA%\TokenTracker\config.json` (처음 실행할 때 생겨요)
 
 - `widget.show`: 위젯에 보일 도구 (기본 `["claude", "codex"]`)
-- `widget.font`, `widget.number_font`: 글꼴 (기본 `Calibri`)
+- `widget.font`, `widget.number_font`: 글꼴 (비워 두면 Segoe UI Variable)
 - `widget.taskbar`: 작업 표시줄 버튼과 % 아이콘 (기본 `true`)
 - `extra_paths`: 기본 위치 밖의 로그 폴더 추가. 예: `"claude": ["D:/backup/.claude/projects"]`
 - `port` (8765), `scan_interval_sec` (60), `limits_interval_sec` (300)

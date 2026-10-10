@@ -76,10 +76,10 @@ DEFAULT_CONFIG = {
     "limits_interval_sec": 300,
     # Monthly subscription you actually pay, per source (USD). 0 = hide comparison.
     "subscription_usd_month": {"claude": 0, "codex": 0, "gemini": 0},
-    "widget": {"x": None, "y": None, "opacity": 0.94, "compact": False, "topmost": True,
+    "widget": {"x": None, "y": None, "opacity": 0.96, "topmost": True,
                "taskbar": True,  # taskbar button whose icon shows the lowest remaining %
                "show": ["claude", "codex"],  # tools shown in the widget (Gemini has no limits)
-               "font": "Calibri", "number_font": "Calibri"},  # any font installed on Windows
+               "font": "", "number_font": ""},  # "" = Segoe UI Variable (Segoe UI on Windows 10)
     "artifact_url": None,
     "extra_paths": {"claude": [], "codex": [], "gemini": []},
 }

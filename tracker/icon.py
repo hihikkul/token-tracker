@@ -56,7 +56,7 @@ def _arc(px, py, c, R, w, sweep):
     return best
 
 
-def render(size, frac=0.72, color=ACCENT, text=None, bars=False):
+def render(size, frac=0.72, color=ACCENT, text=None, bars=False, flat_bg=None, track=TRACK):
     """RGBA rows (list of bytearray) of the mark at `size` px."""
     n = size
     c = n / 2
@@ -64,6 +64,10 @@ def render(size, frac=0.72, color=ACCENT, text=None, bars=False):
     radius = n * 0.22
     R = n * (0.355 if text else 0.31)
     w = max(1.8, n * (0.085 if text else 0.095))
+    tile_col = TILE
+    if flat_bg:  # bare ring on a solid square of the widget's background
+        pad, radius, tile_col = -1.0, 0.0, flat_bg
+        R, w = n * 0.38, max(1.6, n * 0.14)
     sweep = SWEEP * max(0.0, min(1.0, frac))
     glyphs = []
     if text:
@@ -106,8 +110,8 @@ def render(size, frac=0.72, color=ACCENT, text=None, bars=False):
                     g = max(g, _cov(_rrect(px, py, bx, by, hw, hh, hw * 0.9) * 2))
                 fg += g / 4
             # composite: tile -> track -> arc -> glyphs
-            r, gch, b = TILE
-            for col, a in ((TRACK, trk), (color, arc), (WHITE, fg)):
+            r, gch, b = tile_col
+            for col, a in ((track, trk), (color, arc), (WHITE, fg)):
                 r, gch, b = (r + (col[0] - r) * a, gch + (col[1] - gch) * a, b + (col[2] - b) * a)
             row += bytes((int(r + .5), int(gch + .5), int(b + .5), int(min(1.0, tile) * 255 + .5)))
         out.append(row)
@@ -131,6 +135,11 @@ def png(rows):
 
 def gauge_png(size, frac, color, text=None):
     return png(render(size, frac, color, text))
+
+
+def ring_png(size, frac, color, bg, track):
+    """Small gauge for the widget bar, drawn straight onto its background color."""
+    return png(render(size, frac, color, flat_bg=bg, track=track))
 
 
 def app_png(size):

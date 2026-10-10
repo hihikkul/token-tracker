@@ -61,9 +61,9 @@ def apply(expected):
     top = names[0].split("/")[0] + "/"
     need = {top + "app.py", top + "VERSION", top + "tracker/engine.py"}
     if not need.issubset(names):
-        raise RuntimeError("받은 파일이 이 앱이 아니에요")
+        raise RuntimeError("downloaded files are not token-tracker")
     if zf.read(top + "VERSION").decode("utf-8").strip() != expected:
-        raise RuntimeError("버전이 맞지 않아요 (잠시 후 다시 시도)")
+        raise RuntimeError("version mismatch, try again later")
     with tempfile.TemporaryDirectory(dir=paths.data_dir()) as tmp:
         for n in names:
             rel = n[len(top):]
