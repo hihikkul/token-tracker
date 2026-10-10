@@ -39,7 +39,7 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 
 | 도구 | 사용량 | 한도 |
 |---|---|---|
-| Claude Code | `~/.claude/projects/**/*.jsonl` | `api.anthropic.com/api/oauth/usage` (Claude Code 로그인 토큰을 읽기만 함) |
+| Claude Code | `~/.claude/projects/**/*.jsonl` | `api.anthropic.com/api/oauth/usage` (Claude Code 로그인 토큰 사용, 만료되면 갱신) |
 | Codex | `~/.codex/sessions`, `archived_sessions` | 같은 로그의 `rate_limits` (네트워크 사용 안 함, 요금제별로 표시) |
 | Gemini CLI | `~/.gemini/tmp/*/chats/*.json` | 없음 |
 
@@ -62,7 +62,7 @@ Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에
 `doctor.bat`을 실행하면 어떤 로그를 찾았는지, 몇 건 읽었는지, 한도 조회가 되는지 보여줘요.
 
 - Claude 한도 엔드포인트는 비공식이라 바뀌면 한도 표시가 멈출 수 있어요 (사용량 집계는 계속 됨).
-- Claude 로그인 토큰이 만료되면 Claude Code를 한 번 실행해 주세요. 트래커는 토큰을 갱신하지 않아요.
+- Claude 로그인 토큰이 만료되면 트래커가 Claude Code와 같은 방식으로 갱신해서 같은 파일에 다시 저장해요. 갱신도 실패하면 Claude Code에서 `/login`을 한 번 해 주세요. 이 동작을 끄려면 설정에 `"refresh_claude_token": false`.
 
 ## 라이선스
 

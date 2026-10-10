@@ -3,12 +3,15 @@
 Claude : GET https://api.anthropic.com/api/oauth/usage with the OAuth token Claude Code
          stored at login (~/.claude/.credentials.json). Undocumented endpoint, rate
          limited per token -> polled at most every few minutes, last good value cached.
-         The token is only read, never refreshed, so Claude Code's own login is untouched.
+         When the stored token has expired (common when Claude Code runs only inside the
+         desktop app, which keeps its own login), it is refreshed the same way Claude Code
+         does it and the new pair is written back to the same file, other fields untouched.
 Codex  : read from the rate_limits block Codex writes into its session logs (no network),
          kept per account because one PC can be signed into several.
 Gemini : no usage-limit source available.
 """
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -17,6 +20,56 @@ from . import paths
 from .collectors import parse_ts
 
 CLAUDE_URL = "https://api.anthropic.com/api/oauth/usage"
+# Claude Code's public OAuth client (same values the Claude Code CLI uses to refresh its login)
+CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
+CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+REFRESH_RETRY_SEC = 1800
+
+
+def _refresh_claude(cred_file, db):
+    """Refresh an expired Claude Code login and write it back. Returns (oauth, error)."""
+    now = time.time()
+    if now - (db.get_kv("claude_refresh_failed_at") or 0) < REFRESH_RETRY_SEC:
+        return None, "recent_failure"
+    try:
+        raw = json.loads(cred_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, "unreadable"
+    oauth = raw.get("claudeAiOauth") or {}
+    rt = oauth.get("refreshToken")
+    if not rt:
+        return None, "no_refresh_token"
+    body = {"grant_type": "refresh_token", "refresh_token": rt, "client_id": CLAUDE_CLIENT_ID}
+    if oauth.get("scopes"):
+        body["scope"] = " ".join(oauth["scopes"])
+    req = urllib.request.Request(CLAUDE_TOKEN_URL, data=json.dumps(body).encode("utf-8"), method="POST",
+                                 headers={"Content-Type": "application/json", "Accept": "application/json",
+                                          "User-Agent": "tokentracker/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        db.set_kv("claude_refresh_failed_at", now)
+        return None, ("relogin" if e.code in (400, 401, 403) else f"http_{e.code}")
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return None, "offline"
+    if not data.get("access_token"):
+        db.set_kv("claude_refresh_failed_at", now)
+        return None, "bad_response"
+    oauth["accessToken"] = data["access_token"]
+    oauth["refreshToken"] = data.get("refresh_token") or rt
+    if data.get("expires_in"):
+        oauth["expiresAt"] = int((now + float(data["expires_in"])) * 1000)
+    raw["claudeAiOauth"] = oauth
+    tmp = cred_file.with_name(cred_file.name + ".tokentracker.tmp")
+    try:
+        tmp.write_text(json.dumps(raw), encoding="utf-8")
+        os.replace(tmp, cred_file)
+    except OSError:
+        # the new refresh token must not be lost, or Claude Code would need a new login
+        return oauth, "not_saved"
+    db.set_kv("claude_refresh_failed_at", 0)
+    return oauth, None
 
 CLAUDE_LABELS = {
     "five_hour": ("5시간", 1),
@@ -73,11 +126,18 @@ def fetch_claude(db, force=False):
         elif "5x" in tier:
             result["plan"] += " 5x"
     exp = oauth.get("expiresAt")
+    refresh_note = None
+    if token and exp and exp / 1000 < now + 60 and cfg.get("refresh_claude_token", True):
+        new, err = _refresh_claude(cred_file, db)
+        if new:
+            token, exp = new["accessToken"], new.get("expiresAt")
+        refresh_note = err
     if not token:
         result.update(status="no_credentials", message="OAuth 토큰이 없어요 (API 키 로그인?)")
     elif exp and exp / 1000 < now:
-        result.update(status="expired",
-                      message="로그인 토큰 만료 — Claude Code를 한 번 실행하면 갱신돼요")
+        msg = {"relogin": "로그인이 풀렸어요. Claude Code에서 /login 을 한 번 해 주세요",
+               "offline": "토큰 갱신 실패 (인터넷 연결 확인)"}.get(refresh_note, "로그인 토큰 만료. Claude Code를 한 번 실행하면 갱신돼요")
+        result.update(status="expired", message=msg)
     else:
         req = urllib.request.Request(CLAUDE_URL, headers={
             "Authorization": f"Bearer {token}",
