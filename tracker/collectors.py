@@ -47,13 +47,13 @@ def _project_name(cwd):
     return Path(str(cwd).replace("\\", "/")).name or str(cwd)
 
 
-def read_new_lines(db, path):
+def read_new_lines(db, path, force=False):
     """Yield (lineno, obj) for complete JSON lines added since the last scan.
     Returns via generator; the caller must call commit(state) when done."""
     st = path.stat()
     rec = db.get_file(path)
     offset, state = 0, {}
-    if rec:
+    if rec and not force:
         if rec["size"] == st.st_size and rec["mtime"] == st.st_mtime:
             return None  # unchanged
         if st.st_size >= rec["offset"]:
@@ -166,9 +166,9 @@ def _codex_limits_snapshot(rl, ts):
 
 
 def _limits_key(snap, acct):
-    # A session keeps the account it was started with (creator_account_id), but you can switch
-    # login mid-session, so the plan reported with the limits is the reliable identity.
-    who = f"plan:{snap['plan']}" if snap.get("plan") else (acct or "default")
+    # Distinct account IDs remain distinct even when both use the same plan.
+    # Observed mid-session plan changes are passed here with no verified account ID.
+    who = acct or (f"plan:{snap['plan']}" if snap.get("plan") else "default")
     return f"{who}:{snap['limit_id']}"
 
 
@@ -178,13 +178,26 @@ def _keep_limits(accounts, snap, acct, plans, learn):
     Newer Codex builds often leave plan_type out. Such snapshots stay keyed by login and get
     a plan_guess for their label; the guess comes from the first labelled snapshot of a
     session, which belongs to the login that started it (a mid-session switch comes later)."""
+    matched = None
+    if not snap.get('plan') or acct is None:
+        def weekly_reset(value):
+            windows = [w for w in value.get('windows', []) if (w.get('window_minutes') or 0) >= 1440 and w.get('resets_at')]
+            return max(windows, key=lambda w:w['window_minutes'])['resets_at'] if windows else None
+        reset = weekly_reset(snap)
+        candidates = [s for s in accounts.values() if s.get('account') and reset and weekly_reset(s)
+                      and abs(reset-weekly_reset(s)) <= 120
+                      and (not snap.get('plan') or snap['plan'] in (s.get('plan'),s.get('plan_guess')))]
+        owners = {s['account'] for s in candidates}
+        if len(owners) == 1:
+            matched = max(candidates,key=lambda s:s['ts'])
+            acct = matched['account']
     who = acct or "default"
     if snap.get("plan"):
         if learn:
             plans[who] = snap["plan"]
             learn = False
-    elif plans.get(who):
-        snap["plan_guess"] = plans[who]
+    elif matched or plans.get(who):
+        snap["plan_guess"] = (matched.get('plan') or matched.get('plan_guess')) if matched else plans[who]
     key = _limits_key(snap, acct)
     if snap["ts"] >= (accounts.get(key) or {}).get("ts", 0):
         snap["account"] = acct
@@ -192,7 +205,7 @@ def _keep_limits(accounts, snap, acct, plans, learn):
     return learn
 
 
-LIMITS_VERSION = 4
+LIMITS_VERSION = 6
 
 
 def _rebuild_codex_limits(db):
@@ -212,7 +225,7 @@ def _rebuild_codex_limits(db):
                 f = open(path, encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            acct, learn = None, True
+            acct, learn, identity_plan = None, True, None
             with f:
                 for line in f:
                     if '"session_meta"' not in line and '"rate_limits"' not in line:
@@ -228,7 +241,9 @@ def _rebuild_codex_limits(db):
                         ts = parse_ts(o.get("timestamp"))
                         snap = _codex_limits_snapshot(p.get("rate_limits"), ts) if ts else None
                         if snap:
-                            learn = _keep_limits(accounts, snap, acct, plans, learn)
+                            identity_plan = identity_plan or snap.get('plan')
+                            owner = None if snap.get('plan') and identity_plan != snap['plan'] else acct
+                            learn = _keep_limits(accounts, snap, owner, plans, learn)
     db.set_kv("codex_limits_by_account", accounts)
     db.set_kv("codex_plan_by_account", plans)
     db.set_kv("codex_limits_version", LIMITS_VERSION)
@@ -238,6 +253,7 @@ def scan_codex(db, report):
     """Codex writes a cumulative total_token_usage on every token_count event; the
     per-call usage is the difference to the previous event in the same file."""
     n_files = n_rows = 0
+    backfill = db.get_kv('codex_record_accounts_version') != 2
     if db.get_kv("codex_limits_version") != LIMITS_VERSION:
         _rebuild_codex_limits(db)
     accounts = db.get_kv("codex_limits_by_account") or {}  # plan -> latest snapshot
@@ -246,7 +262,7 @@ def scan_codex(db, report):
         for path in d.rglob("*.jsonl"):
             n_files += 1
             try:
-                res = read_new_lines(db, path)
+                res = read_new_lines(db, path, force=backfill)
             except OSError:
                 continue
             if res is None:
@@ -258,6 +274,8 @@ def scan_codex(db, report):
                 sid = m.group(0) if m else path.stem
             model, cwd, acct = state.get("model"), state.get("cwd"), state.get("acct")
             learn = state.get("learn", True)
+            identity_plan = state.get('identity_plan')
+            conflict = state.get('account_conflict', False)
             prev = state.get("prev") or {}
             rows = []
             for _, o in res["lines"]:
@@ -281,7 +299,12 @@ def scan_codex(db, report):
                     continue
                 snap = _codex_limits_snapshot(p.get("rate_limits"), ts)
                 if snap:
-                    learn = _keep_limits(accounts, snap, acct, plans, learn)
+                    identity_plan = identity_plan or snap.get('plan')
+                    if snap.get('plan'):
+                        conflict = snap['plan'] != identity_plan
+                    learn = _keep_limits(accounts, snap, None if conflict else acct, plans, learn)
+                    if acct and snap.get('account') and snap['account'] != acct:
+                        conflict = True
                 info = p.get("info") or {}
                 tot = info.get("total_token_usage")
                 if not isinstance(tot, dict):
@@ -302,17 +325,19 @@ def scan_codex(db, report):
                     # later moved to archived_sessions, so it is never counted twice
                     "uid": f"x:{sid}:{cur['total_tokens']}", "source": "codex", "ts": ts,
                     "model": model or "codex", "project": _project_name(cwd),
-                    "session": sid,
+                    "session": sid, 'account': None if conflict else acct,
                     "input": max(0, delta["input_tokens"] - cached - cwrite),
                     "output": max(0, delta["output_tokens"]),
                     "cache_read": cached, "cache_write": cwrite,
                     "reasoning": max(0, delta["reasoning_output_tokens"]),
                 })
             n_rows += db.upsert_records(rows)
-            res["commit"]({"sid": sid, "model": model, "cwd": cwd, "acct": acct, "prev": prev, "learn": learn})
+            res["commit"]({"sid": sid, "model": model, "cwd": cwd, "acct": acct, "prev": prev, "learn": learn,
+                           'identity_plan':identity_plan, 'account_conflict':conflict})
     if accounts:
         db.set_kv("codex_limits_by_account", accounts)
         db.set_kv("codex_plan_by_account", plans)
+    db.set_kv('codex_record_accounts_version', 2)
     report["codex"] = {"files": n_files, "new_records": n_rows, "accounts": len(accounts),
                        "dirs": [str(p) for p in paths.codex_session_dirs()]}
 

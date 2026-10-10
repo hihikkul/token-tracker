@@ -7,6 +7,16 @@ from urllib.parse import parse_qs, urlparse
 from . import paths, ranking, stats, updater
 from .sources import NAMES, enabled
 from .limits import all_limits
+from .db import DB
+
+
+def ranking_limits(engine):
+    snapshot = engine.snapshot if isinstance(engine.snapshot, dict) else {}
+    result = dict(snapshot.get('limits') or {})
+    if 'codex' not in result and isinstance(engine.db, DB):
+        from .limits import codex_limits
+        result['codex'] = codex_limits(engine.db)
+    return result
 
 WEB = paths.APP_DIR / "web"
 
@@ -39,7 +49,9 @@ def make_handler(engine):
                     'auto_update': cfg.get('auto_update', True),
                     'subscription_usd_month': cfg.get('subscription_usd_month', {}),
                     'subscription_plans': cfg.get('subscription_plans', {}),
-                    'plan_options': ranking.PLAN_OPTIONS})
+                    'plan_options': ranking.PLAN_OPTIONS,
+                    'codex_accounts': ranking.codex_subscriptions(ranking_limits(engine), cfg),
+                    'account_plans': cfg.get('account_plans', {})})
             if u.path in ("/", "/index.html"):
                 return self._send(200, (WEB / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/d3.v7.min.js":
@@ -47,7 +59,7 @@ def make_handler(engine):
             if u.path == "/ssalsoongi.jpg":
                 return self._send(200, (WEB / "ssalsoongi.jpg").read_bytes(), "image/jpeg")
             if u.path == "/api/ratio":
-                rep = ranking.report(engine.db, engine.snapshot.get("limits"))
+                rep = ranking.report(engine.db, ranking_limits(engine))
                 rep["ranking"] = ranking.state()
                 return self._send(200, rep)
             if u.path == "/api/ranking":
@@ -149,6 +161,13 @@ def make_handler(engine):
                         if src in ranking.PLAN_OPTIONS and isinstance(choice, str) and (choice == 'auto' or choice in ranking.PLAN_OPTIONS[src]):
                             choices[src] = choice
                             subs[src] = 0
+                account_plans = b.get('account_plans')
+                if isinstance(account_plans, dict) and isinstance(account_plans.get('codex'), dict):
+                    valid = {row['key'] for row in ranking.codex_subscriptions(ranking_limits(engine), cfg)}
+                    choices = cfg.setdefault('account_plans', {}).setdefault('codex', {})
+                    for key, choice in account_plans['codex'].items():
+                        if key in valid and isinstance(choice, str) and (choice == 'auto' or choice in ranking.PLAN_OPTIONS['codex']):
+                            choices[key] = choice
                 prices = b.get("subscription_usd_month")
                 for src, v in (prices if isinstance(prices, dict) else {}).items():
                     if src in ("claude", "codex", "gemini") and isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v < 10000:

@@ -323,7 +323,8 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
         <label>Codex · ChatGPT<select name="codex"></select></label>
         <label>Gemini · Antigravity<select name="gemini"></select></label>
       </div>
-      <p class="note">USD 정가 기준이며 세금·할인은 반영하지 않습니다. 연간 요금제는 월 환산액을 사용합니다. 같은 구독료는 중복 합산하지 않으며, 가격 미확인 요금제는 합계 배율에서 제외합니다.</p>
+      <div id="codexAccountPlans" class="settings-grid" hidden></div>
+      <p class="note">USD 정가 기준이며 세금·할인은 반영하지 않습니다. 연간 요금제는 월 환산액을 사용합니다. 같은 계정의 구독은 공유 앱에서 한 번만, 서로 다른 계정의 구독은 각각 계산합니다. 가격 미확인 요금제는 합계 배율에서 제외합니다.</p>
       <h3>위젯 모양</h3><div class="settings-grid">
         <label>글꼴<input name="font" type="text" maxlength="80" placeholder="기본 글꼴"></label>
         <label>숫자 글꼴<input name="number_font" type="text" maxlength="80" placeholder="기본 글꼴"></label>
@@ -909,6 +910,17 @@ function settingsView() {
       select.append(new Option(`기존 설정 유지 · ${usd(subs[key])}/월`,'legacy')); select.value='legacy';
     } else select.value=chosen in options ? chosen : 'auto';
   }
+  const accounts=(SOURCE_SETTINGS.codex_accounts || []).filter(a=>a.key !== 'unknown'), accountBox=$('codexAccountPlans');
+  accountBox.replaceChildren(); accountBox.hidden=!accounts.length;
+  form.elements.codex.closest('label').hidden=!!accounts.length;
+  for (const account of accounts) {
+    const label=el('label'), select=el('select'); select.className='account-plan'; select.dataset.key=account.key;
+    label.append(`${account.label} · 감지: ${account.detected_plan || '요금제 미확인'}`);
+    select.append(new Option('자동 감지','auto'));
+    for (const [id,[name,price]] of Object.entries(SOURCE_SETTINGS.plan_options.codex))
+      select.append(new Option(`${name.replace(' (annual)',' · 연간 결제')} · ${price == null ? '가격 미확인' : price === 0 ? '무료' : usd(price)+'/월'}`,id));
+    select.value=SOURCE_SETTINGS.account_plans?.codex?.[account.key] || (accounts.length===1 ? SOURCE_SETTINGS.subscription_plans?.codex : null) || 'auto'; label.append(select); accountBox.append(label);
+  }
   for (const key of ['font','number_font']) form.elements[key].value = widget[key] || '';
   form.elements.opacity.value = Math.round((widget.opacity || .96) * 100);
   form.elements.topmost.checked = widget.topmost !== false;
@@ -922,6 +934,11 @@ $('settingsForm').onsubmit = async event => {
   event.preventDefault(); const form=event.currentTarget;
   const body={subscription_plans:{},widget:{},auto_update:form.elements.auto_update.checked};
   for (const key of ['claude','codex','gemini']) body.subscription_plans[key]=form.elements[key].value;
+  const accountSelects=form.querySelectorAll('.account-plan');
+  if (accountSelects.length) {
+    delete body.subscription_plans.codex; body.account_plans={codex:{}};
+    for (const select of accountSelects) body.account_plans.codex[select.dataset.key]=select.value;
+  }
   for (const key of ['font','number_font']) body.widget[key]=form.elements[key].value;
   for (const key of ['topmost','taskbar']) body.widget[key]=form.elements[key].checked;
   body.widget.opacity=Number(form.elements.opacity.value)/100;
@@ -1001,7 +1018,8 @@ function ratioView() {
   document.querySelectorAll('#rperiod button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.rp)));
   $('r-v').textContent = P.ratio == null ? '×-' : '×' + xfmt(P.ratio);
   $('r-sub').replaceChildren(`${PLABEL[st.rp]} 구독 `, el('b', '', usd(P.sub)), '로 ', el('b', '', usd(P.api)), '어치 사용');
-  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `무료 또는 가격 미확인으로 합계 배율에서 제외: ${P.excluded.map(key => TOOLN[key] || key).join(', ')}. 설정에서 요금제를 선택하세요.` : '';
+  const toolLabel=t => (t.label || TOOLN[t.source]).replace('account unknown','계정 미확인');
+  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `무료·가격 또는 계정 미확인으로 합계 배율에서 제외: ${P.excluded.map(key => toolLabel(P.tools[key])).join(', ')}. 확인된 계정은 각각 계산합니다.` : '';
   const gain = P.api - P.sub, g = $('r-gain');
   g.textContent = P.sub ? (gain >= 0 ? `${usd(gain)} 이득` : `${usd(-gain)} 덜 씀`) : '구독료를 알 수 없어요';
   g.className = 'gain' + (gain >= 0 && P.sub ? '' : ' loss');
@@ -1009,9 +1027,10 @@ function ratioView() {
   const mx = (d3.max(tools, ([, t]) => Math.max(t.api, t.sub)) || 1) * 1.08;
   $('r-rows').replaceChildren(...tools.map(([src, t]) => {
     const row = el('div', 'rrow'); const nm = el('div', 'nm'); const top = el('div'); const i = el('i'); i.style.background = TOOLC[src];
-    top.append(i, el('b', '', TOOLN[src])); if (t.plan) top.append(el('span', 'plan', t.plan));
-    nm.append(top, el('small', '', t.monthly ? `${t.from === 'selection' ? '선택한 요금제' : t.from === 'config' ? '기존 설정' : '감지한 요금제'} ${usd(t.monthly)}/월` : t.monthly === 0 ? '무료 요금제' : '가격 미확인 · 설정에서 요금제 선택'));
-    const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (100 * t.api / mx) + '%'; f.style.background = TOOLC[src]; bar.append(f);
+    const source=t.source || src; i.style.background=TOOLC[source];
+    top.append(i, el('b', '', toolLabel(t))); if (t.plan) top.append(el('span', 'plan', t.plan));
+    nm.append(top, el('small', '', t.monthly ? `${t.from === 'selection' ? '선택한 요금제' : t.from === 'config' ? '기존 설정' : '감지한 요금제'} ${usd(t.monthly)}/월` : t.monthly === 0 ? '무료 요금제' : t.label?.includes('account unknown') ? '로그에 계정 ID 없음 · 배율에서 제외' : '가격 미확인 · 설정에서 요금제 선택'));
+    const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (100 * t.api / mx) + '%'; f.style.background = TOOLC[source]; bar.append(f);
     if (t.sub) { const m = el('em'); m.style.left = (100 * t.sub / mx) + '%'; m.title = '구독료 (본전)'; bar.append(m); }
     const amt = el('span', 'amt'); amt.append(el('b', '', usd(t.api)), ' / ' + (t.sub ? usd(t.sub) : '-'));
     row.append(nm, bar, amt, el('span', 'x' + (t.ratio == null ? ' dim' : ''), t.ratio == null ? '-' : '×' + xfmt(t.ratio)));

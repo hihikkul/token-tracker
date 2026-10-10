@@ -45,6 +45,9 @@ class DB:
         with _lock:
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.executescript(SCHEMA)
+            columns = {row['name'] for row in self.conn.execute('PRAGMA table_info(records)')}
+            if 'account' not in columns:
+                self.conn.execute('ALTER TABLE records ADD COLUMN account TEXT')
             self.conn.commit()
 
     # ------------------------------------------------------------ records
@@ -52,22 +55,23 @@ class DB:
         """rows: iterable of dicts. Same uid seen twice keeps the larger counts
         (Claude Code writes one message several times while it streams)."""
         sql = """
-        INSERT INTO records(uid, source, ts, model, project, session,
+        INSERT INTO records(uid, source, ts, model, project, session, account,
                             input, output, cache_write, cache_read, reasoning)
-        VALUES(:uid, :source, :ts, :model, :project, :session,
+        VALUES(:uid, :source, :ts, :model, :project, :session, :account,
                :input, :output, :cache_write, :cache_read, :reasoning)
         ON CONFLICT(uid) DO UPDATE SET
             input = max(input, excluded.input),
             output = max(output, excluded.output),
             cache_write = max(cache_write, excluded.cache_write),
             cache_read = max(cache_read, excluded.cache_read),
-            reasoning = max(reasoning, excluded.reasoning)
+            reasoning = max(reasoning, excluded.reasoning),
+            account = excluded.account
         """
         rows = list(rows)
         if not rows:
             return 0
         for r in rows:
-            for k in ("model", "project", "session"):
+            for k in ("model", "project", "session", "account"):
                 r.setdefault(k, None)
             for k in ("input", "output", "cache_write", "cache_read", "reasoning"):
                 r[k] = int(r.get(k) or 0)

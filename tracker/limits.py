@@ -227,6 +227,7 @@ def codex_limits(db):
     uniq = []
     for s in snaps:  # newest first
         hit = next((u for u in uniq if u.get("limit_id") == s.get("limit_id")
+                    and u.get('account') == s.get('account')
                     and ((s.get("plan") and s.get("plan") == u.get("plan")) or same_quota(u, s))), None)
         if hit is None:
             uniq.append(dict(s))
@@ -238,7 +239,7 @@ def codex_limits(db):
     # an older entry with the same plan name is a stale copy of a newer one
     seen, kept = set(), []
     for u in uniq:
-        k = (u.get("plan") or u.get("account"), u.get("limit_id"))
+        k = (u.get("account") or u.get("plan"), u.get("limit_id"))
         if k not in seen:
             seen.add(k); kept.append(u)
     uniq = kept

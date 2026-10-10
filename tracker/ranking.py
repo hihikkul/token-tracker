@@ -12,6 +12,7 @@ The ranking server (server/worker.js) receives nickname, plan names and, per per
 the window plus two dollar amounts. Nothing else leaves the PC.
 """
 import json
+import hashlib
 import secrets
 import threading
 import time
@@ -108,6 +109,47 @@ def subscriptions(limits, cfg=None):
     return out
 
 
+def account_key(account):
+    return hashlib.sha256(str(account).encode()).hexdigest()[:12] if account else 'unknown'
+
+
+def codex_subscriptions(limits, cfg=None):
+    cfg = cfg or paths.load_config()
+    accounts = ((limits or {}).get('codex') or {}).get('accounts') or []
+    overrides = (cfg.get('account_plans') or {}).get('codex') or {}
+    rows, seen = [], set()
+    for account in accounts:
+        key = account_key(account.get('account'))
+        if key in seen:
+            continue
+        seen.add(key)
+        local = dict(cfg)
+        local['subscription_plans'] = dict(cfg.get('subscription_plans') or {})
+        # A source-level selection describes one subscription, never all accounts.
+        local['subscription_plans']['codex'] = overrides.get(key, local['subscription_plans'].get('codex', 'auto') if len(accounts) == 1 else 'auto')
+        local['subscription_usd_month'] = dict(cfg.get('subscription_usd_month') or {})
+        if len(accounts) > 1:
+            local['subscription_usd_month']['codex'] = 0
+        sub = subscriptions({'codex': {'plan': account.get('plan')}}, local)['codex']
+        rows.append(dict(sub, key=key, label=f'Codex · {key[:4]}', detected_plan=account.get('plan')))
+    return rows
+
+
+def _codex_spend(db, since_ts, cfg):
+    if 'codex' not in enabled(cfg):
+        return {}
+    out = {}
+    rows = db.query('SELECT account, model, SUM(input) input, SUM(output) output, '
+                    'SUM(cache_write) cache_write, SUM(cache_read) cache_read FROM records '
+                    'WHERE source = ? AND ts >= ? AND ts <= ? GROUP BY account, model',
+                    ('codex', since_ts, time.time()))
+    for row in rows:
+        key = account_key(row['account'])
+        out[key] = out.get(key, 0) + (cost(row['model'], input=row['input'] or 0, output=row['output'] or 0,
+                                         cache_write=row['cache_write'] or 0, cache_read=row['cache_read'] or 0) or 0)
+    return out
+
+
 def _spend(db, since_ts, until_ts=None, cfg=None):
     """{src: API-equivalent USD} for records at or after since_ts."""
     out = {s: 0.0 for s in SOURCES}
@@ -126,18 +168,40 @@ def _spend(db, since_ts, until_ts=None, cfg=None):
 
 def report(db, limits, cfg=None):
     """쌀먹 numbers per period, in total and per tool."""
+    cfg = cfg or paths.load_config()
     subs = subscriptions(limits, cfg)
+    codex = codex_subscriptions(limits, cfg) if 'codex' in enabled(cfg) else []
+    if codex:
+        subs['codex'] = {'accounts':codex, 'usd':sum(row['usd'] or 0 for row in codex),
+                         'plan':' + '.join(row['plan'] or 'Unknown' for row in codex),
+                         'from':'accounts', 'partial':any(row['usd'] is None for row in codex)}
     res = {"subscriptions": subs, "periods": {}}
     for period, (win, start, days) in windows().items():
-        spend = _spend(db, datetime.combine(start, datetime.min.time()).timestamp(), cfg=cfg)
+        start_ts = datetime.combine(start, datetime.min.time()).timestamp()
+        spend = _spend(db, start_ts, cfg=cfg)
         tools, t_api, t_sub = {}, 0.0, 0.0
         for src in SOURCES:
+            if src == 'codex' and codex:
+                account_spend = _codex_spend(db, start_ts, cfg)
+                known = {entry['key'] for entry in codex}
+                entries = codex + [dict(key=key, label='Codex · account unknown' if key == 'unknown' else f'Codex · {key[:4]}',
+                                       usd=None, plan=None, **{'from':None}) for key in account_spend if key not in known]
+                for entry in entries:
+                    usd = entry['usd']
+                    share = (usd or 0) * {'day':1/30, 'week':7/30, 'month':1}[period]
+                    api = account_spend.get(entry['key'], 0)
+                    tools[f"codex:{entry['key']}"] = {'source':'codex','label':entry['label'],
+                        'api':round(api,4),'sub':round(share,4),'ratio':api/share if share else None,
+                        'plan':entry['plan'],'from':entry['from'],'monthly':usd}
+                    if share:
+                        t_api += api; t_sub += share
+                continue
             usd = subs[src]["usd"]
             share = usd * {'day': 1 / 30, 'week': 7 / 30, 'month': 1}[period] if usd else 0.0
             api = spend[src]
             if not usd and not api:
                 continue
-            tools[src] = {"api": round(api, 4), "sub": round(share, 4), "ratio": (api / share) if share else None,
+            tools[src] = {'source':src,'label':NAMES[src], "api": round(api, 4), "sub": round(share, 4), "ratio": (api / share) if share else None,
                           "plan": subs[src]["plan"], "from": subs[src]["from"], "monthly": usd}
             if share:  # a tool without a known price can't be part of the ratio
                 t_api += api
@@ -243,7 +307,7 @@ def sync(db, limits, force=False):
         if not force and time.time() - _last_sync["t"] < SYNC_EVERY:
             return False
         rep = report(db, limits, cfg)
-        plans = " · ".join(f"{NAMES[s]} {t['plan']}" if t.get("plan") else NAMES[s]
+        plans = " · ".join(f"{NAMES[t.get('source',s)]} {t['plan']}" if t.get("plan") else NAMES[t.get('source',s)]
                            for s, t in rep["periods"]["month"]["tools"].items() if t["sub"])
         body = {"nick": r.get("nick") or "", "plans": plans, 'calculation_version': 2,
                 "periods": {p: {"window": v["window"], "api": round(v["api"], 4), "sub": round(v["sub"], 4)}
