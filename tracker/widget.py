@@ -213,6 +213,10 @@ class Win:
             u.SetWindowLongW(h, GWL_EXSTYLE, (ex & ~0x00000080) | 0x00040000)  # -TOOLWINDOW +APPWINDOW
             st = u.GetWindowLongW(h, GWL_STYLE)
             u.SetWindowLongW(h, GWL_STYLE, st | 0x00020000)  # MINIMIZEBOX: taskbar click minimizes
+            from .shortcuts import _pythonw
+            from .windows_shell import configure_pin
+            configure_pin(h, _pythonw(), paths.APP_ROOT / 'app.py',
+                          paths.APP_ROOT / 'assets' / 'token-tracker.ico')
             root.withdraw()
             root.after(10, root.deiconify)
         except (AttributeError, OSError):
