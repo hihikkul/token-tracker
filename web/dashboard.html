@@ -291,7 +291,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
   .fade { animation: fade .35s cubic-bezier(.16, 1, .3, 1) both; }
   @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 }
-.settings-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:12px 0 24px}.settings-grid label {display:grid;gap:8px}.settings-grid input {padding:10px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px}
+.settings-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:12px 0 24px}.settings-grid label {display:grid;gap:8px}.settings-grid input,.settings-grid select {padding:10px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;min-width:0;width:100%}
 </style>
 
 <a class="skip" href="#main">본문으로 건너뛰기</a>
@@ -317,12 +317,13 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
     <h3>표시할 앱</h3><form id="sourceForm" style="display:flex;flex-wrap:wrap;gap:16px;margin:12px 0"></form>
     <p class="note">연결되지 않은 앱은 위젯과 한도 카드에서 숨깁니다.</p>
     <form id="settingsForm">
-      <h3>월 구독료 (USD)</h3><p class="note">0이면 감지된 요금제 가격을 사용합니다. 같은 구독료는 앱별로 중복 합산하지 않습니다.</p>
+      <h3>사용 중인 요금제</h3><p class="note">요금제를 선택하면 구독료가 자동으로 계산됩니다. 자동 감지는 앱에서 확인한 요금제를 사용합니다.</p>
       <div class="settings-grid">
-        <label>Claude<input name="claude" type="number" min="0" max="9999" step="0.01"></label>
-        <label>Codex · ChatGPT<input name="codex" type="number" min="0" max="9999" step="0.01"></label>
-        <label>Gemini · Antigravity<input name="gemini" type="number" min="0" max="9999" step="0.01"></label>
+        <label>Claude<select name="claude"></select></label>
+        <label>Codex · ChatGPT<select name="codex"></select></label>
+        <label>Gemini · Antigravity<select name="gemini"></select></label>
       </div>
+      <p class="note">USD 정가 기준이며 세금·할인은 반영하지 않습니다. 연간 요금제는 월 환산액을 사용합니다. 같은 구독료는 중복 합산하지 않으며, 가격 미확인 요금제는 합계 배율에서 제외합니다.</p>
       <h3>위젯 모양</h3><div class="settings-grid">
         <label>글꼴<input name="font" type="text" maxlength="80" placeholder="기본 글꼴"></label>
         <label>숫자 글꼴<input name="number_font" type="text" maxlength="80" placeholder="기본 글꼴"></label>
@@ -356,14 +357,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
     <div class="ratio-r">
       <div class="rrow rh"><span>도구 · 요금제</span><span>API 환산 (세로선 = 구독료, 본전)</span><span style="text-align:right">환산 / 구독</span><span style="text-align:right">배율</span></div>
       <div id="r-rows"></div>
-      <div class="rfoot"><span>감지한 요금제 가격을 사용합니다. 자동 판별이 안 되는 구독료는 직접 입력하세요. Codex·ChatGPT, Gemini CLI·Antigravity·Gemini 웹은 같은 구독료를 중복 합산하지 않습니다.</span><button class="linkbtn" id="subEdit" type="button">구독료 수정</button></div>
-      <form class="subform" id="subForm" hidden>
-        <label>Claude ($/월)<input name="claude" type="number" min="0" step="1" placeholder="자동"></label>
-        <label>Codex ($/월)<input name="codex" type="number" min="0" step="1" placeholder="자동"></label>
-        <label>Gemini ($/월)<input name="gemini" type="number" min="0" step="1" placeholder="안 씀"></label>
-        <button class="btn primary" type="submit">저장</button>
-        <span class="note">비워 두면 요금제 가격을 써요</span>
-      </form>
+      <div class="rfoot"><span>설정에서 사용 중인 요금제를 선택하세요. Codex·ChatGPT, Gemini CLI·Antigravity·Gemini 웹은 같은 구독료를 중복 합산하지 않습니다.</span><button class="linkbtn" id="subEdit" type="button">요금제 선택</button></div>
     </div>
   </section>
 
@@ -903,7 +897,18 @@ function refreshToolButtons() {
 
 function settingsView() {
   const form = $('settingsForm'), widget = SOURCE_SETTINGS.widget || {}, subs = SOURCE_SETTINGS.subscription_usd_month || {};
-  for (const key of ['claude','codex','gemini']) form.elements[key].value = subs[key] || 0;
+  for (const key of ['claude','codex','gemini']) {
+    const select=form.elements[key], options=SOURCE_SETTINGS.plan_options?.[key] || {};
+    select.replaceChildren(new Option('자동 감지','auto'));
+    for (const [id,[name,price]] of Object.entries(options)) {
+      const label=name.replace(' (annual)',' · 연간 결제').replace('Other plan','기타 요금제');
+      select.append(new Option(`${label} · ${price == null ? '가격 미확인' : price === 0 ? '무료' : usd(price) + '/월'}`,id));
+    }
+    const chosen=SOURCE_SETTINGS.subscription_plans?.[key];
+    if (!chosen && subs[key] > 0) {
+      select.append(new Option(`기존 설정 유지 · ${usd(subs[key])}/월`,'legacy')); select.value='legacy';
+    } else select.value=chosen in options ? chosen : 'auto';
+  }
   for (const key of ['font','number_font']) form.elements[key].value = widget[key] || '';
   form.elements.opacity.value = Math.round((widget.opacity || .96) * 100);
   form.elements.topmost.checked = widget.topmost !== false;
@@ -915,8 +920,8 @@ $('settingsBtn').onclick = openSettings;
 $('settingsBack').onclick = () => { st.view='main'; writeHash(); render(); scrollTo(0,0); };
 $('settingsForm').onsubmit = async event => {
   event.preventDefault(); const form=event.currentTarget;
-  const body={subscription_usd_month:{},widget:{},auto_update:form.elements.auto_update.checked};
-  for (const key of ['claude','codex','gemini']) body.subscription_usd_month[key]=Number(form.elements[key].value);
+  const body={subscription_plans:{},widget:{},auto_update:form.elements.auto_update.checked};
+  for (const key of ['claude','codex','gemini']) body.subscription_plans[key]=form.elements[key].value;
   for (const key of ['font','number_font']) body.widget[key]=form.elements[key].value;
   for (const key of ['topmost','taskbar']) body.widget[key]=form.elements[key].checked;
   body.widget.opacity=Number(form.elements.opacity.value)/100;
@@ -996,7 +1001,7 @@ function ratioView() {
   document.querySelectorAll('#rperiod button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.rp)));
   $('r-v').textContent = P.ratio == null ? '×-' : '×' + xfmt(P.ratio);
   $('r-sub').replaceChildren(`${PLABEL[st.rp]} 구독 `, el('b', '', usd(P.sub)), '로 ', el('b', '', usd(P.api)), '어치 사용');
-  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `구독료 미확인으로 합계 배율에서 제외: ${P.excluded.map(key => TOOLN[key] || key).join(', ')}. 아래 구독료 수정에서 입력하세요.` : '';
+  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `무료 또는 가격 미확인으로 합계 배율에서 제외: ${P.excluded.map(key => TOOLN[key] || key).join(', ')}. 설정에서 요금제를 선택하세요.` : '';
   const gain = P.api - P.sub, g = $('r-gain');
   g.textContent = P.sub ? (gain >= 0 ? `${usd(gain)} 이득` : `${usd(-gain)} 덜 씀`) : '구독료를 알 수 없어요';
   g.className = 'gain' + (gain >= 0 && P.sub ? '' : ' loss');
@@ -1005,7 +1010,7 @@ function ratioView() {
   $('r-rows').replaceChildren(...tools.map(([src, t]) => {
     const row = el('div', 'rrow'); const nm = el('div', 'nm'); const top = el('div'); const i = el('i'); i.style.background = TOOLC[src];
     top.append(i, el('b', '', TOOLN[src])); if (t.plan) top.append(el('span', 'plan', t.plan));
-    nm.append(top, el('small', '', t.monthly ? `${t.from === 'config' ? '직접 넣은 값' : '요금제 가격'} $${t.monthly}/월` : '구독료 모름 · 아래에서 입력'));
+    nm.append(top, el('small', '', t.monthly ? `${t.from === 'selection' ? '선택한 요금제' : t.from === 'config' ? '기존 설정' : '감지한 요금제'} ${usd(t.monthly)}/월` : t.monthly === 0 ? '무료 요금제' : '가격 미확인 · 설정에서 요금제 선택'));
     const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (100 * t.api / mx) + '%'; f.style.background = TOOLC[src]; bar.append(f);
     if (t.sub) { const m = el('em'); m.style.left = (100 * t.sub / mx) + '%'; m.title = '구독료 (본전)'; bar.append(m); }
     const amt = el('span', 'amt'); amt.append(el('b', '', usd(t.api)), ' / ' + (t.sub ? usd(t.sub) : '-'));
@@ -1018,12 +1023,6 @@ async function loadRatio() {
 }
 $('rperiod').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (b) { st.rp = b.dataset.v; ratioView(); } });
 $('subEdit').onclick = () => openSettings();
-$('subForm').onsubmit = async (e) => {
-  e.preventDefault(); const f = e.target; const body = { subscription_usd_month: {} };
-  for (const src of ['claude', 'codex', 'gemini']) body.subscription_usd_month[src] = f.elements[src].value === '' ? 0 : Math.max(0, Number(f.elements[src].value));
-  try { await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (err) {}
-  f.hidden = true; loadRatio();
-};
 
 // ---------- views: dashboard / 쌀숭이 랭킹
 function applyView() {

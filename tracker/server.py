@@ -37,7 +37,9 @@ def make_handler(engine):
                     'source_names': NAMES, 'version': updater.local_version(),
                     'widget': {k: cfg.get('widget', {}).get(k) for k in ('font','number_font','opacity','topmost','taskbar')},
                     'auto_update': cfg.get('auto_update', True),
-                    'subscription_usd_month': cfg.get('subscription_usd_month', {})})
+                    'subscription_usd_month': cfg.get('subscription_usd_month', {}),
+                    'subscription_plans': cfg.get('subscription_plans', {}),
+                    'plan_options': ranking.PLAN_OPTIONS})
             if u.path in ("/", "/index.html"):
                 return self._send(200, (WEB / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/d3.v7.min.js":
@@ -140,6 +142,13 @@ def make_handler(engine):
                     cfg['sources'] = {key: value for key, value in selected.items()
                                       if key in NAMES and isinstance(value, bool)}
                 subs = cfg.setdefault("subscription_usd_month", {})
+                plans = b.get('subscription_plans')
+                if isinstance(plans, dict):
+                    choices = cfg.setdefault('subscription_plans', {})
+                    for src, choice in plans.items():
+                        if src in ranking.PLAN_OPTIONS and isinstance(choice, str) and (choice == 'auto' or choice in ranking.PLAN_OPTIONS[src]):
+                            choices[src] = choice
+                            subs[src] = 0
                 prices = b.get("subscription_usd_month")
                 for src, v in (prices if isinstance(prices, dict) else {}).items():
                     if src in ("claude", "codex", "gemini") and isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v < 10000:

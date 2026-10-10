@@ -98,6 +98,7 @@ DEFAULT_CONFIG = {
     # Monthly subscription you pay, per source (USD). 0 = use the detected plan's list price
     # (Claude Pro $20, Codex Plus $20…). Gemini can't be detected, so set it here to count it.
     "subscription_usd_month": {"claude": 0, "codex": 0, "gemini": 0},
+    "subscription_plans": {},  # auto-detect until the user chooses a plan
     "widget": {"x": None, "y": None, "opacity": 0.96, "topmost": True,
                "taskbar": True,  # taskbar button whose icon shows the lowest remaining %
                "show": ["claude", "codex"],  # tools shown in the widget (Gemini has no limits)

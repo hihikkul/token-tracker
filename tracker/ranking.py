@@ -4,9 +4,9 @@ Periods follow the local calendar: today, this week (from Monday), this month.
 Subscription comparisons use a full paid month, or its fixed 1/30 daily and
 7/30 weekly allocation. Month-to-date usage is never compared with a partial bill.
 
-Subscription price per tool: `subscription_usd_month` in config.json when > 0,
-otherwise the price of the plan the limits lookup reports (Claude Pro, Codex Plus…).
-Gemini has no plan lookup, so it counts only when set in config.
+Subscription price per tool: the selected subscription_plans entry, then a legacy
+subscription_usd_month override, otherwise the detected plan's list price.
+Free and unknown selected plans never fall back to a detected paid plan.
 
 The ranking server (server/worker.js) receives nickname, plan names and, per period,
 the window plus two dollar amounts. Nothing else leaves the PC.
@@ -29,10 +29,31 @@ DEFAULT_SERVER = "https://token-tracker-rank.hihikkul-token-tracker.workers.dev"
 
 SOURCES = ("claude", "codex", "gemini")
 NAMES = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
-# monthly USD list prices of the plans the limits lookup can report
+# USD monthly list prices; annual options use the monthly equivalent.
+# Sources: claude.com/pricing, help.openai.com (Plus, Pro tiers, Business),
+# blog.google/products/google-one/google-ai-ultra/ and Google AI plans.
+PLAN_OPTIONS = {
+    'claude': {
+        'free': ('Free', 0), 'pro': ('Pro', 20),
+        'pro_annual': ('Pro (annual)', 200 / 12),
+        'max_5x': ('Max 5x', 100), 'max_20x': ('Max 20x', 200),
+        'team': ('Team Standard', 25), 'team_premium': ('Team Premium', 125),
+        'enterprise': ('Enterprise', None)},
+    'codex': {
+        'free': ('Free', 0), 'go': ('Go', None), 'plus': ('Plus', 20),
+        'pro_100': ('Pro 100', 100), 'pro_200': ('Pro 200', 200), 'pro_500': ('Pro 500', 500),
+        'business': ('Business Standard', 25), 'business_annual': ('Business Standard (annual)', 20),
+        'business_premium': ('Business Premium', 125), 'business_premium_annual': ('Business Premium (annual)', 100),
+        'business_lite': ('Business Lite', None), 'enterprise': ('Enterprise', None)},
+    'gemini': {'free': ('Free', 0), 'plus': ('Google AI Plus', None),
+               'pro': ('Google AI Pro', 19.99), 'pro_annual': ('Google AI Pro (annual)', 199.99 / 12),
+               'ultra_5x': ('Google AI Ultra 5x', 99.99), 'ultra': ('Google AI Ultra 20x', 249.99),
+               'other': ('Other plan', None)},
+}
 PLAN_PRICES = {
-    "claude": {"free": 0, "pro": 20, "max 5x": 100, "max 20x": 200, "max": 100, "team": 30},
-    "codex": {"free": 0, "go": 8, "plus": 20, "pro": 200, "team": 30, "business": 30},
+    "claude": {"free": 0, "pro": 20, "max 5x": 100, "max 20x": 200, "max": 100, "team": 25},
+    "codex": {"free": 0, "go": 8, "plus": 20, "pro": 200, 'pro 100': 100, 'pro 200': 200,
+              'pro 500': 500, "team": 25, "business": 25},
 }
 PERIODS = ("day", "week", "month")
 SYNC_EVERY = 15 * 60
@@ -63,6 +84,7 @@ def subscriptions(limits, cfg=None):
     """{src: {"usd": float|None, "plan": str|None, "from": "config"|"plan"|None}}"""
     cfg = cfg or paths.load_config()
     manual = cfg.get("subscription_usd_month") or {}
+    plans = cfg.get('subscription_plans') or {}
     selected = {'gemini' if src == 'antigravity' else src for src in enabled(cfg)}
     out = {}
     for src in SOURCES:
@@ -70,6 +92,11 @@ def subscriptions(limits, cfg=None):
             out[src] = {'usd': None, 'plan': None, 'from': None}
             continue
         plan = _plan(limits, src)
+        chosen = PLAN_OPTIONS[src].get(plans.get(src))
+        if chosen:
+            name, price = chosen
+            out[src] = {'usd': price, 'plan': name, 'from': 'selection'}
+            continue
         m = manual.get(src)
         if isinstance(m, (int, float)) and m > 0:
             out[src] = {"usd": float(m), "plan": plan, "from": "config"}
