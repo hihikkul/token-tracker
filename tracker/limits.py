@@ -24,6 +24,17 @@ CLAUDE_URL = "https://api.anthropic.com/api/oauth/usage"
 CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 REFRESH_RETRY_SEC = 1800
+# Claude Code's refresh token lasts about 30 days and is replaced on every refresh. Refreshing
+# well before it runs out keeps the login alive for as long as the tracker runs now and then,
+# even if Claude Code itself is not opened for weeks.
+KEEPALIVE_SEC = 7 * 86400
+
+
+def _read_oauth(cred_file):
+    try:
+        return json.loads(cred_file.read_text(encoding="utf-8")).get("claudeAiOauth") or {}
+    except (OSError, ValueError):
+        return {}
 
 
 def _refresh_claude(cred_file, db):
@@ -49,6 +60,10 @@ def _refresh_claude(cred_file, db):
         with urllib.request.urlopen(req, timeout=20) as r:
             data = json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
+        # Claude Code may have refreshed (and so replaced the refresh token) at the same moment
+        fresh = _read_oauth(cred_file)
+        if fresh.get("refreshToken") and fresh.get("refreshToken") != rt:
+            return fresh, None
         db.set_kv("claude_refresh_failed_at", now)
         return None, ("relogin" if e.code in (400, 401, 403) else f"http_{e.code}")
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
@@ -60,6 +75,14 @@ def _refresh_claude(cred_file, db):
     oauth["refreshToken"] = data.get("refresh_token") or rt
     if data.get("expires_in"):
         oauth["expiresAt"] = int((now + float(data["expires_in"])) * 1000)
+    # Claude Code treats the login as gone once refreshTokenExpiresAt has passed, so it must
+    # move forward together with the new refresh token (same fields Claude Code writes)
+    if data.get("refresh_token_expires_in"):
+        oauth["refreshTokenExpiresAt"] = int((now + float(data["refresh_token_expires_in"])) * 1000)
+    elif data.get("refresh_token") and data["refresh_token"] != rt:
+        oauth["refreshTokenExpiresAt"] = int((now + 30 * 86400) * 1000)
+    if isinstance(data.get("scope"), str) and data["scope"].strip():
+        oauth["scopes"] = data["scope"].split()
     raw["claudeAiOauth"] = oauth
     tmp = cred_file.with_name(cred_file.name + ".tokentracker.tmp")
     try:
@@ -91,6 +114,21 @@ def _window_label(minutes):
     if m % 1440 == 0:
         return f"{m // 1440}d"
     return f"{round(m / 60)}h"
+
+
+class _Relogin(Exception):
+    pass
+
+
+def _get_usage(token):
+    req = urllib.request.Request(CLAUDE_URL, headers={
+        "Authorization": f"Bearer {token}",
+        "anthropic-beta": "oauth-2025-04-20",
+        "Accept": "application/json",
+        "User-Agent": "tokentracker-personal/1.0",
+    })
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read().decode("utf-8"))
 
 
 def fetch_claude(db, force=False):
@@ -130,28 +168,40 @@ def fetch_claude(db, force=False):
         elif "5x" in tier:
             result["plan"] += " 5x"
     exp = oauth.get("expiresAt")
+    rt_exp = oauth.get("refreshTokenExpiresAt")
     refresh_note = None
-    if token and exp and exp / 1000 < now + 60 and cred_file and cfg.get("refresh_claude_token", True):
+    can_refresh = bool(cred_file) and cfg.get("refresh_claude_token", True)
+    access_due = bool(exp) and exp / 1000 < now + 60
+    keepalive_due = bool(rt_exp) and rt_exp / 1000 < now + KEEPALIVE_SEC
+    if token and can_refresh and (access_due or keepalive_due):
         new, err = _refresh_claude(cred_file, db)
         if new:
             token, exp = new["accessToken"], new.get("expiresAt")
+            rt_exp = new.get("refreshTokenExpiresAt") or rt_exp
         refresh_note = err
+    if rt_exp:
+        result["login_until"] = rt_exp / 1000
     if not token:
         result.update(status="no_credentials", message="No OAuth token (API key login?)")
     elif exp and exp / 1000 < now:
-        msg = {"relogin": "Sign in again with /login in Claude Code",
-               "offline": "Token refresh failed (check your connection)"}.get(refresh_note, "Login expired. Run Claude Code to refresh it.")
-        result.update(status="expired", message=msg)
+        if refresh_note == "relogin" or (rt_exp and rt_exp / 1000 < now):
+            result.update(status="relogin", message="Claude sign-in ended. Right-click → Sign in to Claude")
+        else:
+            msg = {"offline": "Token refresh failed (check your connection)"}.get(
+                refresh_note, "Login expired. Retrying shortly")
+            result.update(status="expired", message=msg)
     else:
-        req = urllib.request.Request(CLAUDE_URL, headers={
-            "Authorization": f"Bearer {token}",
-            "anthropic-beta": "oauth-2025-04-20",
-            "Accept": "application/json",
-            "User-Agent": "tokentracker-personal/1.0",
-        })
         try:
-            with urllib.request.urlopen(req, timeout=15) as r:
-                data = json.loads(r.read().decode("utf-8"))
+            try:
+                data = _get_usage(token)
+            except urllib.error.HTTPError as e:
+                if e.code not in (401, 403):
+                    raise
+                # the token was revoked early (e.g. replaced elsewhere): refresh once and retry
+                new, err = _refresh_claude(cred_file, db) if can_refresh else (None, "relogin")
+                if not new:
+                    raise _Relogin(err)
+                data = _get_usage(new["accessToken"])
             windows = []
             for key, v in data.items():
                 if not isinstance(v, dict) or v.get("utilization") is None:
@@ -166,12 +216,17 @@ def fetch_claude(db, force=False):
             if isinstance(extra, dict) and extra.get("is_enabled"):
                 result["extra"] = {k: extra.get(k) for k in
                                    ("monthly_limit", "used_credits", "utilization")}
+        except _Relogin as e:
+            if str(e) == "relogin":
+                result.update(status="relogin", message="Claude sign-in ended. Right-click → Sign in to Claude")
+            else:
+                result.update(status="auth", message="Couldn't renew the Claude sign-in. Retrying later")
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 result.update(status="rate_limited", backoff_until=now + 900,
                               message="Rate limited (showing cached values)")
             elif e.code in (401, 403):
-                result.update(status="auth", message="Authentication failed. Sign in to Claude Code again.")
+                result.update(status="relogin", message="Claude sign-in ended. Right-click → Sign in to Claude")
             else:
                 result.update(status="error", message=f"HTTP {e.code}")
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:

@@ -27,10 +27,16 @@ C = {
     "good": "#3fb950", "warning": "#e3b341", "serious": "#f0883e", "critical": "#f85149",
 }
 SHORT = {**NAMES, 'claude': 'Claude', 'gemini': 'Gemini CLI'}
+
+
+def needs_signin(src, lim):
+    """Claude was set up on this PC but its login can no longer be renewed by itself."""
+    return src == "claude" and lim.get("status") in ("relogin", "auth", "expired")
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 STATUS = {
     "no_credentials": "Not signed in on this PC",
-    "expired": "Login expired. Open Claude Code once",
+    "expired": "Login expired. Retrying shortly",
+    "relogin": "Sign-in ended. Click Sign in",
     "no_data": "No data yet",
     "rate_limited": "Rate limited. Showing last values",
     "offline": "Offline. Showing last values",
@@ -349,6 +355,7 @@ class Widget:
                     font=(FONT, 9))
         m.add_command(label="Open Dashboard", command=self.open_dashboard)
         m.add_command(label="Refresh Now", command=self.refresh)
+        m.add_command(label="Sign in to Claude…", command=self.sign_in_claude)
         m.add_command(label="Check for Updates", command=lambda: self._update(manual=True))
         if self.taskbar:
             m.add_command(label="Minimize to Taskbar", command=self.minimize)
@@ -388,6 +395,31 @@ class Widget:
     # --------------------------------------------------------------- actions
     def open_dashboard(self):
         webbrowser.open(self.url)
+
+    def sign_in_claude(self):
+        """Open a terminal running `claude auth login`; pick the new login up once it is saved."""
+        import subprocess
+        hint = "Claude Code CLI not found. Install it from https://claude.com/claude-code and try again."
+        try:
+            if os.name == "nt":
+                subprocess.Popen(f'start "Claude sign-in" cmd /k "claude auth login || echo. & echo {hint}"',
+                                 shell=True)
+            elif MAC:
+                subprocess.Popen(["osascript", "-e",
+                                  'tell application "Terminal" to do script "claude auth login"',
+                                  "-e", 'tell application "Terminal" to activate'])
+            else:
+                subprocess.Popen(["x-terminal-emulator", "-e", "claude auth login"])
+        except OSError:
+            self._note("Run `claude auth login` in a terminal", 10000)
+            return
+        try:
+            self.engine.db.set_kv("claude_refresh_failed_at", 0)
+        except Exception:
+            pass
+        self._note("Finish signing in, then limits come back", 15000)
+        for sec in (30, 90, 180, 300):
+            self.root.after(sec * 1000, self.refresh)
 
     def refresh(self):
         self._note("Refreshing…", 0)
@@ -574,13 +606,26 @@ class Widget:
         self._bind_drag(strut)
         first = True
         for src in NAMES:
-            if src not in self.show or not connected(limits.get(src) or {}):
+            lim_src = limits.get(src) or {}
+            if src not in self.show or not (connected(lim_src) or needs_signin(src, lim_src)):
                 continue
             if not first:
                 sep = tk.Frame(self.bar, bg=C["edge"], width=1, height=16)
                 sep.pack(side="left", padx=12)
                 self._bind_drag(sep)
             first = False
+            if needs_signin(src, lim_src) and not connected(lim_src):
+                parts = [tk.Label(self.bar, image=self._ring(0, C["track"]), bg=C["bg"]),
+                         tk.Label(self.bar, text=SHORT[src], bg=C["bg"], fg=C["ink2"], font=(FONT, 10)),
+                         tk.Label(self.bar, text="Sign in", bg=C["bg"], fg=C["ink"], cursor="hand2",
+                                  font=(FONT, 10, "underline"))]
+                parts[0].pack(side="left")
+                parts[1].pack(side="left", padx=(6, 4))
+                parts[2].pack(side="left")
+                for p in parts[:2]:
+                    self._bind_drag(p)
+                parts[2].bind("<Button-1>", lambda e: self.sign_in_claude())
+                continue
             w = self._five_hour(limits.get(src) or {})
             used = float(w["used_percent"]) if w else None
             if used is None:
@@ -666,9 +711,20 @@ class Widget:
 
         first = True
         for src in NAMES:
-            if src not in self.show or not connected(limits.get(src) or {}):
-                continue
             lim = limits.get(src) or {}
+            if src not in self.show or not (connected(lim) or needs_signin(src, lim)):
+                continue
+            if needs_signin(src, lim):
+                head = tk.Frame(inner, bg=C["tip"])
+                head.pack(fill="x", pady=(0 if first else 10, 2))
+                first = False
+                lab(head, NAMES[src], C["ink"], 9, True, side="left")
+                lab(inner, "Sign-in ended because Claude Code wasn't used for a while.", C["muted"], 8, anchor="w")
+                link = lab(inner, "Sign in to Claude  →", C["ink"], 9, True, anchor="w", pady=(3, 0))
+                link.configure(cursor="hand2")
+                link.bind("<Button-1>", lambda e: self.sign_in_claude())
+                if not connected(lim):
+                    continue
             for plan, wins, fetched in self._accounts(lim) or [(None, [], None)]:
                 head = tk.Frame(inner, bg=C["tip"])
                 head.pack(fill="x", pady=(0 if first else 10, 2))

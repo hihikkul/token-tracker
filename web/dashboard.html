@@ -885,7 +885,7 @@ function refreshToolButtons() {
   const names = Object.entries(SOURCE_SETTINGS.source_names).filter(([key, name]) => {
     if (SOURCE_SETTINGS.sources[key] === false) return false;
     const limit = LIMITS[key] || {};
-    const connected = !['no_credentials','expired','auth','unsupported','no_data'].includes(limit.status) &&
+    const connected = !['no_credentials','expired','auth','relogin','unsupported','no_data'].includes(limit.status) &&
       ((limit.windows || []).length || (limit.accounts || []).some(a => a.windows && a.windows.length));
     return connected || (DATA.daily_detail || []).some(row => row.tool === name);
   }).map(([,name]) => name);
@@ -974,7 +974,7 @@ function limitsView() {
   for (const [src, name] of Object.entries(SOURCE_SETTINGS.source_names)) {
     if (SOURCE_SETTINGS.sources[src] === false) continue;
     const l = LIMITS[src] || {};
-    if (['no_credentials','expired','auth','unsupported','no_data'].includes(l.status)) continue;
+    if (['no_credentials','expired','auth','relogin','unsupported','no_data'].includes(l.status)) continue;
     const accts = l.accounts && l.accounts.length ? l.accounts : [{ plan: l.plan, windows: l.windows || [], fetched_at: l.fetched_at }];
     if (st.tool !== 'all' && name !== st.tool) continue;
     for (const a of accts) {
