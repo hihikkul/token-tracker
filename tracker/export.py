@@ -17,7 +17,9 @@ from .limits import all_limits
 from .pricing import cost, price_for
 
 TOK = ("input", "output", "cache_write", "cache_read")
-from .sources import NAMES as SRC_NAME
+from .sources import NAMES as _NAMES
+
+SRC_NAME = {**_NAMES, "other": "Other models"}
 
 
 def _cost(r):

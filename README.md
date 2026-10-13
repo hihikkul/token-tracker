@@ -93,6 +93,7 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 | Antigravity | `~/.gemini/antigravity*`에서 토큰 수가 있는 기록만 | 실행 중인 앱의 로컬 서버에서 모델별 잔여 한도 조회 |
 | ChatGPT / Gemini 웹 | 공개 토큰 기록 인터페이스 없음 | 공개 조회 인터페이스 없음: 조회 불가 안내 |
 
+- ClaudeRipple 같은 프록시로 Claude Code 안에서 GPT·Gemini·DeepSeek 등이 답한 대화는 로그에 남은 실제 모델 이름을 보고 나눠 세요. GPT(ChatGPT 구독)는 **Codex**, Gemini는 **Gemini**, 나머지는 **Other models**로 집계되고 Claude 사용량에는 들어가지 않아요.
 - claude.ai 웹·앱 대화는 PC에 토큰 기록이 남지 않아서 집계되지 않아요.
 - 웹 항목은 선택할 수 있지만 Codex/Gemini CLI 기록을 웹 사용량으로 대신 표시하지 않아요. Antigravity가 토큰 기록을 제공하지 않는 버전이면 한도만 표시돼요. Gemini CLI는 먼저 CLI에서 로그인하고, Antigravity는 앱을 실행해주세요.
 - Claude Code는 기본 30일이 지나면 로그를 지우지만, 트래커가 한 번 읽은 기록은 `usage.db`에 계속 남아요. 켜 둘수록 기록이 길어집니다.

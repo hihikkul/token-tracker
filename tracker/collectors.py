@@ -97,8 +97,45 @@ def _claude_dir_project(path):
     return path.parent.name
 
 
+_OPENAI = re.compile(r"^(gpt|chatgpt|codex|o\d)([-.\d]|$)")
+
+
+def claude_log_source(model):
+    """Which product a turn in a Claude Code transcript really used.
+
+    Proxies such as ClaudeRipple let GPT (on a ChatGPT/Codex plan), Gemini and other models answer
+    inside Claude Code; the transcript then carries that model's real name. Those turns spend the
+    other product's quota, not Claude's, so they are counted there."""
+    m = (model or "").lower()
+    if not m or "claude" in m or m.split("-")[0] in ("opus", "sonnet", "haiku"):
+        return "claude"
+    if "/" in m or "gpt-oss" in m:  # routed through OpenRouter or an API key, not a subscription
+        return "gemini" if m.startswith("google/gemini") else "other"
+    if _OPENAI.search(m):
+        return "codex"
+    if "gemini" in m:
+        return "gemini"
+    return "other"
+
+
+def _split_claude_vendors(db):
+    """One-off: move earlier non-Claude turns out of the Claude bucket."""
+    if db.get_kv("claude_vendor_split") == 1:
+        return
+    models = [r["model"] for r in db.query("SELECT DISTINCT model FROM records WHERE source = 'claude'")]
+    from .db import _lock
+    with _lock:
+        for m in models:
+            src = claude_log_source(m)
+            if src != "claude":
+                db.conn.execute("UPDATE records SET source = ? WHERE source = 'claude' AND model = ?", (src, m))
+        db.conn.commit()
+    db.set_kv("claude_vendor_split", 1)
+
+
 def scan_claude(db, report):
     n_files = n_rows = 0
+    _split_claude_vendors(db)
     for root in paths.claude_project_dirs():
         for path in root.rglob("*.jsonl"):
             n_files += 1
@@ -123,7 +160,7 @@ def scan_claude(db, report):
                 mid, rid = msg.get("id"), o.get("requestId")
                 uid = f"c:{mid}:{rid}" if mid else f"c:{path}:{lineno}"
                 rows.append({
-                    "uid": uid, "source": "claude", "ts": ts, "model": model,
+                    "uid": uid, "source": claude_log_source(model), "ts": ts, "model": model,
                     "project": _project_name(o.get("cwd")) or _claude_dir_project(path),
                     "session": o.get("sessionId") or path.stem,
                     "input": u.get("input_tokens", 0),
