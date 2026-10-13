@@ -48,3 +48,20 @@ class ProxyModels(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UpdaterRoot(unittest.TestCase):
+    def test_exe_beside_source_updates_the_source_folder(self):
+        from unittest import mock
+        from tracker import updater
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "app.py").write_text("")
+            Path(tmp, "VERSION").write_text("1.0.0")
+            with mock.patch.object(sys, "frozen", True, create=True), \
+                    mock.patch.object(sys, "executable", str(Path(tmp, "TokenTracker.exe"))):
+                self.assertFalse(updater.is_frozen())
+                self.assertEqual(updater.local_version(), "1.0.0")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(sys, "frozen", True, create=True), \
+                    mock.patch.object(sys, "executable", str(Path(tmp, "Token Tracker"))):
+                self.assertTrue(updater.is_frozen())

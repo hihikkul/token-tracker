@@ -69,6 +69,13 @@ def _run(mode, startup=False):
         if " " not in line:
             continue
         kind, path = line.split(" ", 1)
+        if kind == 'created':
+            from .windows_shell import set_shortcut_id
+            try:
+                set_shortcut_id(path)
+            except OSError as error:
+                print('작업 표시줄 바로가기 등록 실패:', error)
+                return 1
         print(("만듦: " if kind == "created" else "지움: ") + path)
     return 0
 

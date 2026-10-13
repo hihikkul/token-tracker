@@ -14,6 +14,7 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
+from pathlib import Path
 
 from . import paths
 
@@ -25,7 +26,7 @@ UA = {"User-Agent": "token-tracker-updater"}
 
 def local_version():
     try:
-        return (paths.APP_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        return ((_root() or paths.APP_ROOT) / "VERSION").read_text(encoding="utf-8").strip()
     except OSError:
         return "0"
 
@@ -40,13 +41,23 @@ def _tuple(v):
     return tuple(out)
 
 
+def _root():
+    """The folder that holds the app's source. A Windows exe built next to the source (for the
+    taskbar) updates that folder and hands over to it; a packaged app on its own has none."""
+    if getattr(sys, "frozen", False):
+        beside = Path(sys.executable).resolve().parent
+        return beside if (beside / "app.py").exists() else None
+    return paths.APP_ROOT
+
+
 def is_frozen():
-    """The packaged macOS app (PyInstaller) can't overwrite itself; it offers the new DMG instead."""
-    return bool(getattr(sys, "frozen", False))
+    """A packaged app with no source next to it (the macOS DMG) can't overwrite itself;
+    it offers the new download instead."""
+    return _root() is None
 
 
 def is_git_checkout():
-    return (paths.APP_ROOT / ".git").exists()
+    return bool(_root()) and (_root() / ".git").exists()
 
 
 def check():
@@ -68,8 +79,10 @@ def apply(expected):
     need = {top + "app.py", top + "VERSION", top + "tracker/engine.py"}
     if not need.issubset(names):
         raise RuntimeError("downloaded files are not token-tracker")
-    if zf.read(top + "VERSION").decode("utf-8").strip() != expected:
-        raise RuntimeError("version mismatch, try again later")
+    # raw.githubusercontent.com can lag the zip by a few minutes; anything at least as new is fine
+    got = zf.read(top + "VERSION").decode("utf-8").strip()
+    if _tuple(got) < _tuple(expected):
+        raise RuntimeError("GitHub is still publishing this version, try again in a few minutes")
     with tempfile.TemporaryDirectory(dir=paths.data_dir()) as tmp:
         for n in names:
             rel = n[len(top):]
@@ -84,16 +97,15 @@ def apply(expected):
             for f in files:
                 src = os.path.join(base, f)
                 rel = os.path.relpath(src, tmp)
-                dst = paths.APP_ROOT / rel
+                dst = _root() / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
-    from .shortcuts import refresh_existing
-    refresh_existing()
+    _refresh_shortcuts()
 
 
 def _git(*args):
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    r = subprocess.run(["git", "-C", str(paths.APP_ROOT), *args], capture_output=True, text=True,
+    r = subprocess.run(["git", "-C", str(_root()), *args], capture_output=True, text=True,
                        encoding="utf-8", errors="replace", timeout=120, creationflags=flags)
     if r.returncode:
         raise RuntimeError((r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout).strip()
@@ -107,22 +119,40 @@ def install(expected):
         if _git("status", "--porcelain", "--untracked-files=no").strip():
             raise RuntimeError("local file changes; commit or discard them first")
         _git("pull", "--ff-only", "origin", "main")
-        if local_version() != expected:
+        if _tuple(local_version()) < _tuple(expected):
             raise RuntimeError("pulled, but the version did not change")
-        from .shortcuts import refresh_existing
-        refresh_existing()
+        _refresh_shortcuts()
         return
     apply(expected)
 
 
+def _python():
+    exe = sys.executable
+    if getattr(sys, "frozen", False):
+        exe = shutil.which("pythonw") or shutil.which("python") or ""
+        if not exe:
+            raise OSError("Python not found")
+    w = os.path.join(os.path.dirname(exe), "pythonw.exe")
+    return w if os.name == "nt" and os.path.exists(w) else exe
+
+
+def _refresh_shortcuts():
+    """Point the desktop/Start/startup icons at the updated source. From inside an exe the
+    shortcut code would see the exe's unpacked copy, so the new source does it instead."""
+    if not getattr(sys, "frozen", False):
+        from .shortcuts import refresh_existing
+        refresh_existing()
+        return
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    subprocess.run([_python(), str(_root() / "app.py"), "--refresh-shortcuts"], cwd=str(_root()),
+                   capture_output=True, timeout=120, creationflags=flags)
+
+
 def restart():
     """Start a fresh copy that waits for this one to close, then let the caller exit."""
-    exe = sys.executable
-    w = os.path.join(os.path.dirname(exe), "pythonw.exe")
-    if os.name == "nt" and os.path.exists(w):
-        exe = w
+    exe = _python()  # from an exe, continue with Python: the exe still holds the old code
     flags = 0
     if os.name == "nt":
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-    subprocess.Popen([exe, str(paths.APP_ROOT / "app.py"), "--wait-port"], cwd=str(paths.APP_ROOT),
+    subprocess.Popen([exe, str(_root() / "app.py"), "--wait-port"], cwd=str(_root()),
                      creationflags=flags, close_fds=True)

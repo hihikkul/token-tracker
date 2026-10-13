@@ -1,7 +1,6 @@
 """Windows taskbar pin metadata, separate from the live usage gauge."""
 import ctypes
 import os
-import subprocess
 import uuid
 from ctypes import wintypes
 
@@ -47,52 +46,61 @@ def method(store, index, *args):
     return ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, *args)(table[index])
 
 
-def configure_pin(hwnd, executable, app, icon):
-    """Explorer otherwise pins the host interpreter and uses its Python icon."""
-    if os.name != 'nt':
-        return
-    command = subprocess.list2cmdline([str(executable), str(app)])
-    store = window_store(hwnd)
-    try:
-        set_value = method(store, 6, ctypes.POINTER(PropertyKey), ctypes.POINTER(PropVariant))
-        # Set relaunch properties before the explicit window ID (Microsoft requirement).
-        for pid, text in ((2, command), (3, f'{icon},0'), (4, 'Token Tracker'), (5, APP_ID)):
-            buffer = ctypes.create_unicode_buffer(text)
-            value = PropVariant()
-            value.vt = 31  # VT_LPWSTR; SetValue copies the string
-            value.value = ctypes.cast(buffer, ctypes.c_void_p).value
-            hr = set_value(store, ctypes.byref(key(pid)), ctypes.byref(value))
-            if hr < 0:
-                raise OSError(f'IPropertyStore.SetValue: {hr:#x}')
-    finally:
-        method(store, 2)(store)  # Release; window stores do not require Commit
 
-
-def set_usage_overlay(hwnd, icon_handle, description):
-    """Pinned group icons override WM_SETICON; overlays carry live status instead."""
-    if os.name != 'nt':
-        return
-    ole = ctypes.windll.ole32
-    initialized = ole.CoInitialize(None)
-    taskbar = ctypes.c_void_p()
-    clsid = GUID.parse('56fdf344-fd6d-11d0-958a-006097c9a090')
-    iid = GUID.parse('ea1afb91-9e28-4b86-90e9-9e9f8a5eefaf')  # ITaskbarList3
-    create = ole.CoCreateInstance
+def shortcut_store(filename):
+    """Load a ShellLink and its property store; caller releases both interfaces."""
+    clsid = GUID.parse('00021401-0000-0000-c000-000000000046')
+    iid = GUID.parse('0000010b-0000-0000-c000-000000000046')  # IPersistFile
+    link = ctypes.c_void_p()
+    create = ctypes.windll.ole32.CoCreateInstance
     create.argtypes = [ctypes.POINTER(GUID), ctypes.c_void_p, wintypes.DWORD,
                        ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p)]
     create.restype = ctypes.c_long
+    hr = create(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(link))
+    if hr < 0:
+        raise OSError(f'CoCreateInstance(ShellLink): {hr:#x}')
     try:
-        hr = create(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(taskbar))
+        hr = method(link, 5, wintypes.LPCWSTR, wintypes.DWORD)(link, str(filename), 2)
         if hr < 0:
-            raise OSError(f'CoCreateInstance(TaskbarList): {hr:#x}')
-        hr = method(taskbar, 3)(taskbar)  # HrInit
+            raise OSError(f'IPersistFile.Load: {hr:#x}')
+        iid = GUID.parse('886d8eeb-8cf2-4446-8d02-cdba1dbdcf99')
+        store = ctypes.c_void_p()
+        hr = method(link, 0, ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p))(
+            link, ctypes.byref(iid), ctypes.byref(store))
+        if hr < 0:
+            raise OSError(f'QueryInterface(IPropertyStore): {hr:#x}')
+        return link, store
+    except Exception:
+        method(link, 2)(link)
+        raise
+
+
+def set_shortcut_id(filename):
+    """Pin static shortcut, use process identity plus WM_SETICON for the running app.
+
+    Window RelaunchIconResource would force the static icon even while running.
+    """
+    ole = ctypes.windll.ole32
+    initialized = ole.CoInitialize(None)
+    link = store = None
+    try:
+        link, store = shortcut_store(filename)
+        buffer = ctypes.create_unicode_buffer(APP_ID)
+        value = PropVariant()
+        value.vt = 31
+        value.value = ctypes.cast(buffer, ctypes.c_void_p).value
+        hr = method(store, 6, ctypes.POINTER(PropertyKey), ctypes.POINTER(PropVariant))(
+            store, ctypes.byref(key(5)), ctypes.byref(value))
         if hr >= 0:
-            hr = method(taskbar, 18, wintypes.HWND, wintypes.HANDLE, wintypes.LPCWSTR)(
-                taskbar, hwnd, icon_handle, description)
+            hr = method(store, 7)(store)  # Commit
+        if hr >= 0:
+            hr = method(link, 6, wintypes.LPCWSTR, wintypes.BOOL)(link, str(filename), True)
         if hr < 0:
-            raise OSError(f'ITaskbarList3.SetOverlayIcon: {hr:#x}')
+            raise OSError(f'Save shortcut AppUserModelID: {hr:#x}')
     finally:
-        if taskbar:
-            method(taskbar, 2)(taskbar)
+        if store:
+            method(store, 2)(store)
+        if link:
+            method(link, 2)(link)
         if initialized >= 0:
             ole.CoUninitialize()

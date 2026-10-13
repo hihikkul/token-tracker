@@ -75,9 +75,13 @@ def main():
     ap.add_argument("--install", action="store_true", help="바탕화면·시작 메뉴에 아이콘 만들기 (Windows)")
     ap.add_argument("--startup", action="store_true", help="--install과 함께: 로그인할 때 자동 실행")
     ap.add_argument("--uninstall", action="store_true", help="만든 아이콘 지우기")
-    ap.add_argument("--wait-port", action="store_true", help=argparse.SUPPRESS)  # after self-update
+    ap.add_argument("--wait-port", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--refresh-shortcuts", action="store_true", help=argparse.SUPPRESS)  # after an exe update  # after self-update
     a = ap.parse_args()
 
+    if a.refresh_shortcuts:
+        from tracker.shortcuts import refresh_existing
+        return refresh_existing()
     if a.install:
         from tracker.shortcuts import install
         return install(startup=a.startup)

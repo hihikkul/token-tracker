@@ -219,10 +219,6 @@ class Win:
             u.SetWindowLongW(h, GWL_EXSTYLE, (ex & ~0x00000080) | 0x00040000)  # -TOOLWINDOW +APPWINDOW
             st = u.GetWindowLongW(h, GWL_STYLE)
             u.SetWindowLongW(h, GWL_STYLE, st | 0x00020000)  # MINIMIZEBOX: taskbar click minimizes
-            from .shortcuts import _pythonw
-            from .windows_shell import configure_pin
-            configure_pin(h, _pythonw(), paths.APP_ROOT / 'app.py',
-                          paths.APP_ROOT / 'assets' / 'token-tracker.ico')
             root.withdraw()
             root.after(10, root.deiconify)
         except (AttributeError, OSError):
@@ -805,10 +801,6 @@ class Widget:
                 target = paths.data_dir() / 'taskbar.ico'
                 icon.write_gauge_ico(target, key)
                 Win.set_icon(self.root, target)
-                from .windows_shell import set_usage_overlay
-                set_usage_overlay(Win.hwnd(self.root),
-                                  self.root._native_icons[0] if key is not None else None,
-                                  f'{SHORT[key[1]]} {key[0]}% remaining' if key else '')
         except tk.TclError:
             pass
 
