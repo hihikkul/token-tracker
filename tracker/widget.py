@@ -495,10 +495,6 @@ class Widget:
                         self._note(f"v{new} available · right-click to download", 20000)))
             threading.Thread(target=check, daemon=True).start()
             return
-        if updater.is_git_checkout():
-            if manual:
-                self._note("Git checkout: update with git pull")
-            return
         if manual:
             self._note("Checking…", 0)
         self._updating = True
@@ -511,7 +507,7 @@ class Widget:
                         self.root.after(0, lambda: self._note(f"Up to date (v{updater.local_version()})"))
                     return
                 self.root.after(0, lambda: self._note(f"Updating to v{new}…", 0))
-                updater.apply(new)
+                updater.install(new)
                 self.root.after(0, self._restart)
             except Exception as e:  # network down, GitHub busy, files locked…
                 if manual:

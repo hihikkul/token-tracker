@@ -115,7 +115,7 @@ def make_handler(engine):
             if path == '/api/update':
                 try:
                     latest = updater.check()
-                    mode = 'download' if updater.is_frozen() else 'git' if updater.is_git_checkout() else 'install'
+                    mode = 'download' if updater.is_frozen() else 'install'  # git clones update with git pull
                     if latest and mode == 'install' and getattr(engine, 'update_callback', None):
                         engine.update_callback()
                     return self._send(200, {'current': updater.local_version(), 'latest': latest,

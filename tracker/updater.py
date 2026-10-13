@@ -3,7 +3,8 @@
 The widget checks the VERSION file on GitHub a little after start and then every few hours.
 When it is newer, the repository zip is downloaded, checked, and copied over this folder
 (your records and settings live elsewhere, in %LOCALAPPDATA%\\TokenTracker), then the app
-restarts itself. A git clone is left alone: use `git pull` there.
+restarts itself. A folder cloned with git is updated with `git pull --ff-only` instead, so
+git keeps tracking it; without git installed it falls back to the zip.
 """
 import io
 import os
@@ -88,6 +89,30 @@ def apply(expected):
                 shutil.copy2(src, dst)
     from .shortcuts import refresh_existing
     refresh_existing()
+
+
+def _git(*args):
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    r = subprocess.run(["git", "-C", str(paths.APP_ROOT), *args], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=120, creationflags=flags)
+    if r.returncode:
+        raise RuntimeError((r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout).strip()
+                           else f"git {args[0]} failed")
+    return r.stdout
+
+
+def install(expected):
+    """Bring this folder to the newest version, the way that fits how it was installed."""
+    if is_git_checkout() and shutil.which("git"):
+        if _git("status", "--porcelain", "--untracked-files=no").strip():
+            raise RuntimeError("local file changes; commit or discard them first")
+        _git("pull", "--ff-only", "origin", "main")
+        if local_version() != expected:
+            raise RuntimeError("pulled, but the version did not change")
+        from .shortcuts import refresh_existing
+        refresh_existing()
+        return
+    apply(expected)
 
 
 def restart():
