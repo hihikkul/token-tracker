@@ -236,7 +236,8 @@ def fetch_claude(db, force=False):
 
 
 PLAN_NAMES = {"plus": "Plus", "pro": "Pro", "team": "Team", "business": "Business",
-              "self_serve_business_prolite": "Business Lite", "enterprise": "Enterprise",
+              "self_serve_business_prolite": "Business Premium",  # Business workspace, Premium (Pro-level Codex) seat
+              "enterprise": "Enterprise",
               "free": "Free", "edu": "Edu"}
 
 

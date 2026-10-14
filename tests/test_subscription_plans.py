@@ -36,3 +36,11 @@ class SubscriptionPlans(unittest.TestCase):
         self.assertEqual(cfg['subscription_plans'],{'claude':'auto','codex':'pro_500'})
         self.assertEqual(cfg['subscription_usd_month']['claude'],0)
         self.assertNotIn('gemini',cfg['subscription_plans'])
+
+
+class BusinessPremiumDetection(unittest.TestCase):
+    def test_prolite_workspace_reads_as_business_premium(self):
+        from tracker.limits import PLAN_NAMES
+        self.assertEqual(PLAN_NAMES['self_serve_business_prolite'], 'Business Premium')
+        cfg = {'sources': {'codex': True}, 'subscription_plans': {}, 'subscription_usd_month': {}}
+        self.assertEqual(ranking.subscriptions({'codex': {'plan': 'Business Premium'}}, cfg)['codex']['usd'], 125)

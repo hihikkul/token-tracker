@@ -54,7 +54,8 @@ PLAN_OPTIONS = {
 PLAN_PRICES = {
     "claude": {"free": 0, "pro": 20, "max 5x": 100, "max 20x": 200, "max": 100, "team": 25},
     "codex": {"free": 0, "go": 8, "plus": 20, "pro": 200, 'pro 100': 100, 'pro 200': 200,
-              'pro 500': 500, "team": 25, "business": 25},
+              'pro 500': 500, "team": 25, "business": 25,
+              "business premium": 125},
 }
 PERIODS = ("day", "week", "month")
 SYNC_EVERY = 15 * 60
