@@ -65,3 +65,38 @@ class UpdaterRoot(unittest.TestCase):
             with mock.patch.object(sys, "frozen", True, create=True), \
                     mock.patch.object(sys, "executable", str(Path(tmp, "Token Tracker"))):
                 self.assertTrue(updater.is_frozen())
+
+
+class ProxyAccount(unittest.TestCase):
+    def test_gpt_turns_get_clauderipples_first_usable_login(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ripple = root / "ripple"
+            ripple.mkdir()
+            (ripple / "chatgpt-accounts.json").write_text(json.dumps({"accounts": [
+                {"id": "x", "accountId": "acct-paused", "paused": True},
+                {"id": "y", "accountId": "acct-business"},
+                {"id": "z", "accountId": "acct-plus"}]}))
+            proj = root / "claude" / "projects" / "C--work"
+            proj.mkdir(parents=True)
+            (proj / "s.jsonl").write_text(json.dumps({
+                "type": "assistant", "timestamp": "2026-10-14T03:00:00Z", "requestId": "r", "sessionId": "s",
+                "message": {"id": "m", "model": "gpt-6-astra", "usage": {"input_tokens": 9, "output_tokens": 1}}}) + "\n")
+            os.environ.update(TOKENTRACKER_HOME=str(root / "data"), CLAUDE_CONFIG_DIR=str(root / "claude"),
+                              CLAUDERIPPLE_HOME=str(ripple), CODEX_HOME=str(root / "codex"))
+            from tracker import collectors, db
+            d = db.DB(root / "t.db")
+            d.upsert_records([{"uid": "c:old:2", "source": "codex", "ts": 1, "model": "gpt-6.1-sol",
+                               "input": 1, "output": 1}])
+            collectors.scan_claude(d, {})
+            got = {r["uid"]: r["account"] for r in d.query("SELECT uid, account FROM records")}
+            self.assertEqual(got, {"c:old:2": "acct-business", "c:m:r": "acct-business"})
+
+    def test_without_clauderipple_the_codex_login_is_used(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "codex").mkdir()
+            (root / "codex" / "auth.json").write_text(json.dumps({"tokens": {"account_id": "acct-codex"}}))
+            os.environ.update(CLAUDERIPPLE_HOME=str(root / "none"), CODEX_HOME=str(root / "codex"))
+            from tracker.collectors import proxy_chatgpt_account
+            self.assertEqual(proxy_chatgpt_account(), "acct-codex")

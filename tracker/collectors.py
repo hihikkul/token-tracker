@@ -118,6 +118,42 @@ def claude_log_source(model):
     return "other"
 
 
+def proxy_chatgpt_account():
+    """The ChatGPT login that answers GPT turns proxied out of Claude Code.
+
+    ClaudeRipple sends each turn with the first usable account in its own login list
+    (chatgpt-accounts.json, in order, skipping paused or signed-out ones) and only then the Codex
+    CLI's login; another account is used only while that one fails. Without ClaudeRipple, the
+    Codex CLI's login is the account a ChatGPT-plan proxy would borrow. Only ids are read here."""
+    try:
+        data = json.loads((paths.clauderipple_home() / "chatgpt-accounts.json").read_text(encoding="utf-8"))
+        accounts = data.get("accounts", data) if isinstance(data, dict) else data
+        for a in accounts or []:
+            if isinstance(a, dict) and a.get("accountId") and not a.get("paused") and not a.get("needsReauth"):
+                return a["accountId"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    try:
+        tokens = json.loads((paths.codex_root() / "auth.json").read_text(encoding="utf-8")).get("tokens") or {}
+        return tokens.get("account_id") or None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _assign_proxy_accounts(db):
+    """One-off: GPT turns from Claude Code logs stored without an account get the proxy's login."""
+    if db.get_kv("claude_proxy_accounts") == 1:
+        return
+    acct = proxy_chatgpt_account()
+    if acct:
+        from .db import _lock
+        with _lock:
+            db.conn.execute("UPDATE records SET account = ? WHERE source = 'codex' AND uid LIKE 'c:%' "
+                            "AND account IS NULL", (acct,))
+            db.conn.commit()
+        db.set_kv("claude_proxy_accounts", 1)
+
+
 def _split_claude_vendors(db):
     """One-off: move earlier non-Claude turns out of the Claude bucket."""
     if db.get_kv("claude_vendor_split") == 1:
@@ -136,6 +172,8 @@ def _split_claude_vendors(db):
 def scan_claude(db, report):
     n_files = n_rows = 0
     _split_claude_vendors(db)
+    _assign_proxy_accounts(db)
+    proxy_acct = None
     for root in paths.claude_project_dirs():
         for path in root.rglob("*.jsonl"):
             n_files += 1
@@ -159,8 +197,12 @@ def scan_claude(db, report):
                     continue
                 mid, rid = msg.get("id"), o.get("requestId")
                 uid = f"c:{mid}:{rid}" if mid else f"c:{path}:{lineno}"
+                src = claude_log_source(model)
+                if src == "codex" and proxy_acct is None:
+                    proxy_acct = proxy_chatgpt_account() or ""
                 rows.append({
-                    "uid": uid, "source": claude_log_source(model), "ts": ts, "model": model,
+                    "uid": uid, "source": src, "ts": ts, "model": model,
+                    "account": (proxy_acct or None) if src == "codex" else None,
                     "project": _project_name(o.get("cwd")) or _claude_dir_project(path),
                     "session": o.get("sessionId") or path.stem,
                     "input": u.get("input_tokens", 0),

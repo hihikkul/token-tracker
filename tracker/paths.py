@@ -73,6 +73,11 @@ def claude_keychain_oauth():
     return None
 
 
+def clauderipple_home() -> Path:
+    v = os.environ.get("CLAUDERIPPLE_HOME")
+    return Path(v) if v else HOME / ".clauderipple"
+
+
 def codex_root() -> Path:
     v = os.environ.get("CODEX_HOME")
     return Path(v) if v else HOME / ".codex"
