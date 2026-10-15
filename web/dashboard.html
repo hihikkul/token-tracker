@@ -1247,7 +1247,20 @@ $('updateBtn').onclick = async () => {
     const response = await fetch('/api/update',{method:'POST'}); const result=await response.json();
     if (!response.ok) throw new Error(result.error || '업데이트 확인 실패');
     if (!result.latest) $('status').textContent=`최신 버전입니다 (v${result.current})`;
-    else if (result.mode === 'install') $('status').textContent=`v${result.latest} 업데이트 중… 완료되면 다시 시작합니다`;
+    else if (result.mode === 'install') {
+      $('status').textContent=`v${result.latest} 받는 중…`;
+      // the app restarts on its own; watch for the new version and reload when it answers
+      const t0=Date.now();
+      while (Date.now()-t0 < 90000) {
+        await new Promise(r => setTimeout(r, 1000));
+        try {
+          const s=await (await fetch('/api/settings',{cache:'no-store'})).json();
+          if (s.version === result.latest) { $('status').textContent=`v${result.latest} 업데이트 완료`; setTimeout(() => location.reload(), 800); return; }
+          $('status').textContent=`v${result.latest} 설치 중… ${Math.round((Date.now()-t0)/1000)}초`;
+        } catch (e) { $('status').textContent=`다시 시작하는 중… ${Math.round((Date.now()-t0)/1000)}초`; }
+      }
+      $('status').textContent='업데이트가 오래 걸려요. 위젯을 다시 켜 주세요';
+    }
     else {
       $('status').replaceChildren(`v${result.latest} 사용 가능 · `);
       const link=el('a','',result.mode === 'git' ? '설치 파일 다운로드 (개발용 폴더는 git pull)' : '새 버전 다운로드'); link.href=result.url; link.target='_blank'; $('status').append(link);

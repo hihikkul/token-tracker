@@ -24,6 +24,18 @@ ZIP_URL = f"https://codeload.github.com/{REPO}/zip/refs/heads/main"
 UA = {"User-Agent": "token-tracker-updater"}
 
 
+def log(msg):
+    """Timestamped trace of each update step in <data>/update.log (kept short)."""
+    import time
+    try:
+        f = paths.data_dir() / "update.log"
+        lines = f.read_text(encoding="utf-8").splitlines()[-200:] if f.exists() else []
+        lines.append(time.strftime("%m-%d %H:%M:%S ") + msg)
+        f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def local_version():
     try:
         return ((_root() or paths.APP_ROOT) / "VERSION").read_text(encoding="utf-8").strip()
@@ -100,7 +112,6 @@ def apply(expected):
                 dst = _root() / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
-    _refresh_shortcuts()
 
 
 def _git(*args):
@@ -121,7 +132,6 @@ def install(expected):
         _git("pull", "--ff-only", "origin", "main")
         if _tuple(local_version()) < _tuple(expected):
             raise RuntimeError("pulled, but the version did not change")
-        _refresh_shortcuts()
         return
     apply(expected)
 
@@ -134,18 +144,6 @@ def _python():
             raise OSError("Python not found")
     w = os.path.join(os.path.dirname(exe), "pythonw.exe")
     return w if os.name == "nt" and os.path.exists(w) else exe
-
-
-def _refresh_shortcuts():
-    """Point the desktop/Start/startup icons at the updated source. From inside an exe the
-    shortcut code would see the exe's unpacked copy, so the new source does it instead."""
-    if not getattr(sys, "frozen", False):
-        from .shortcuts import refresh_existing
-        refresh_existing()
-        return
-    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    subprocess.run([_python(), str(_root() / "app.py"), "--refresh-shortcuts"], cwd=str(_root()),
-                   capture_output=True, timeout=120, creationflags=flags)
 
 
 def restart():

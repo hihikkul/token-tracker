@@ -7,6 +7,7 @@
     python app.py --export DIR 대시보드 아티팩트용 JSON 파일 내보내기
 """
 import argparse
+import os
 import json
 import sys
 import time
@@ -26,7 +27,7 @@ from tracker.server import serve  # noqa: E402
 
 def already_running(port):
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/limits", timeout=1.5) as r:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/limits", timeout=0.8) as r:
             return r.status == 200
     except Exception:
         return False
@@ -102,10 +103,17 @@ def main():
 
     port = a.port or paths.load_config().get("port", 8765)
     if a.wait_port:  # the old copy is still closing after an update
-        for _ in range(30):
+        from tracker import updater
+        t0 = time.time()
+        for _ in range(60):
             if not already_running(port):
                 break
-            time.sleep(0.5)
+            time.sleep(0.25)
+        updater.log(f"new copy v{updater.local_version()} started after {time.time() - t0:.1f}s wait")
+        if os.name == "nt":  # point the icons at this copy, off the startup path
+            import threading
+            from tracker.shortcuts import refresh_existing
+            threading.Thread(target=refresh_existing, daemon=True).start()
     if already_running(port):  # second launch: just open the dashboard
         webbrowser.open(f"http://127.0.0.1:{port}/")
         return

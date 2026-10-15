@@ -292,7 +292,7 @@ class Widget:
         global FONT, NUM_FONT
         FONT, NUM_FONT = pick_fonts(self.root, wc.get("font"), wc.get("number_font"))
         self.root.title("Token Tracker")
-        self.engine.update_callback = lambda: self.root.after(0, lambda: self._update(manual=True))
+        self.engine.update_callback = lambda latest=None: self.root.after(0, lambda: self._update(manual=True, known=latest))
         try:
             self.root.iconbitmap(default=str(paths.APP_ROOT / "assets" / "token-tracker.ico"))
         except (tk.TclError, AttributeError):
@@ -466,7 +466,7 @@ class Widget:
         hours = float(self.cfg.get("update_check_hours", 1))
         self.root.after(int(hours * 3600 * 1000), self._auto_update)
 
-    def _update(self, manual):
+    def _update(self, manual, known=None):
         if getattr(self, '_updating', False):
             return
         if updater.is_frozen():
@@ -497,13 +497,17 @@ class Widget:
 
         def work():
             try:
-                new = updater.check()
+                t0 = time.time()
+                new = known or updater.check()
+                updater.log(f"check {time.time() - t0:.1f}s -> {new or 'up to date'}")
                 if not new:
                     if manual:
                         self.root.after(0, lambda: self._note(f"Up to date (v{updater.local_version()})"))
                     return
                 self.root.after(0, lambda: self._note(f"Updating to v{new}…", 0))
+                t0 = time.time()
                 updater.install(new)
+                updater.log(f"install v{new} {time.time() - t0:.1f}s")
                 self.root.after(0, self._restart)
             except Exception as e:  # network down, GitHub busy, files locked…
                 if manual:
@@ -514,7 +518,15 @@ class Widget:
         threading.Thread(target=work, daemon=True).start()
 
     def _restart(self):
+        httpd = getattr(self.engine, "httpd", None)
+        if httpd is not None:  # free the port now; the new copy would otherwise wait for it
+            try:
+                httpd.shutdown()
+                httpd.server_close()
+            except Exception:
+                pass
         try:
+            updater.log("restarting")
             updater.restart()
         except OSError:
             self._note("Update ready. Restart to apply", 15000)

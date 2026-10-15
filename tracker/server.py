@@ -117,7 +117,7 @@ def make_handler(engine):
                     latest = updater.check()
                     mode = 'download' if updater.is_frozen() else 'install'  # git clones update with git pull
                     if latest and mode == 'install' and getattr(engine, 'update_callback', None):
-                        engine.update_callback()
+                        engine.update_callback(latest)
                     return self._send(200, {'current': updater.local_version(), 'latest': latest,
                         'mode': mode, 'url': 'https://github.com/hihikkul/token-tracker/releases/latest'})
                 except Exception:
@@ -210,6 +210,7 @@ def serve(engine, port=None, background=True):
     if httpd is None:
         raise OSError(f"포트 {port}~{port + 9}가 모두 사용 중이에요")
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
+    engine.httpd = httpd  # an update closes it first, so the new copy can take the port at once
     if background:
         threading.Thread(target=httpd.serve_forever, daemon=True, name="http").start()
     else:
