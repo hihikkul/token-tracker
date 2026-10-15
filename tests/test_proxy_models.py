@@ -1,5 +1,6 @@
 """GPT and other models answering inside Claude Code (e.g. through ClaudeRipple) are not Claude usage."""
 import json
+import time
 import os
 import sys
 import tempfile
@@ -100,3 +101,49 @@ class ProxyAccount(unittest.TestCase):
             os.environ.update(CLAUDERIPPLE_HOME=str(root / "none"), CODEX_HOME=str(root / "codex"))
             from tracker.collectors import proxy_chatgpt_account
             self.assertEqual(proxy_chatgpt_account(), "acct-codex")
+
+
+class RippleQuota(unittest.TestCase):
+    def test_live_quota_of_the_account_in_use_leads(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        now = time.time()
+        body = {"provider": "chatgpt-subscription-2", "accounts": [
+            {"id": "own-biz", "planType": "self_serve_business_prolite", "active": True,
+             "quota": {"plan_type": "self_serve_business_prolite", "at": now * 1000,
+                       "rate_limits": {"primary": {"used_percent": 31, "window_minutes": 10080,
+                                                   "reset_after_seconds": 3600}, "secondary": None}}},
+            {"id": "own-plus", "planType": "plus", "active": False, "quota": None}]}
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps(body).encode())
+
+        srv = HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ripple = root / "ripple"
+            ripple.mkdir()
+            (ripple / "config.json").write_text(json.dumps({"admin": {"port": srv.server_address[1]}}))
+            (ripple / "chatgpt-accounts.json").write_text(json.dumps({"accounts": [
+                {"id": "own-biz", "accountId": "acct-biz"}, {"id": "own-plus", "accountId": "acct-plus"}]}))
+            os.environ.update(TOKENTRACKER_HOME=str(root / "data"), CLAUDERIPPLE_HOME=str(ripple),
+                              CODEX_HOME=str(root / "codex"))
+            from tracker import db, limits
+            d = db.DB(root / "t.db")
+            # the Codex CLI last reported the Plus account an hour ago
+            d.set_kv("codex_limits_by_account", {"plan:plus:codex": {
+                "ts": now - 3600, "limit_id": "codex", "plan": "plus", "account": "acct-plus",
+                "windows": [{"key": "primary", "used_percent": 20, "window_minutes": 300, "resets_at": now + 600}]}})
+            out = limits.codex_limits(d)
+            srv.shutdown()
+        self.assertEqual(out["accounts"][0]["account"], "acct-biz")
+        self.assertEqual(out["accounts"][0]["plan"], "Business Premium")
+        self.assertEqual(out["windows"][0]["used_percent"], 31.0)
+        self.assertEqual({a["account"] for a in out["accounts"]}, {"acct-biz", "acct-plus"})

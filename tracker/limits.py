@@ -260,6 +260,11 @@ def _codex_one(snap, now):
 
 def codex_limits(db):
     snaps = list((db.get_kv("codex_limits_by_account") or {}).values())
+    try:  # live quotas of accounts that ClaudeRipple uses for GPT inside Claude Code
+        from .ripple import chatgpt_snapshots
+        snaps += chatgpt_snapshots()
+    except Exception:
+        pass
     out = {"source": "codex", "windows": [], "accounts": [], "status": "ok", "message": ""}
     if not snaps:
         out.update(status="no_data", message="No quota information in Codex logs yet")
@@ -267,6 +272,7 @@ def codex_limits(db):
     now = time.time()
     if any(s.get("account") for s in snaps):
         snaps = [s for s in snaps if s.get("account")]  # old logs carried no account id
+    # newest first; the account ClaudeRipple is sending with right now leads when it reports one
     snaps.sort(key=lambda s: -(s.get("ts") or 0))
     # Two snapshots belong to the same quota when their windows reset at the same moments
     # (a plan-less snapshot from newer Codex builds and a labelled one, or old keying).
