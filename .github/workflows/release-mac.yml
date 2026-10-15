@@ -1,10 +1,13 @@
 # Builds "Token Tracker.app" into a DMG and attaches it to a GitHub release.
-# Runs when a version tag is pushed (git tag v1.2.0 && git push origin v1.2.0) or by hand.
+# Runs when VERSION changes on main (the release is tagged v<VERSION> automatically),
+# when a version tag is pushed (git tag v1.2.0 && git push origin v1.2.0), or by hand.
 name: macOS DMG
 
 on:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths: [VERSION]
   workflow_dispatch:
 
 permissions:
@@ -63,9 +66,15 @@ jobs:
 
   release:
     needs: build
-    if: always() && startsWith(github.ref, 'refs/tags/v')
+    if: always() && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Release tag
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else echo "tag=v$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/download-artifact@v4
         with:
           path: out
@@ -73,6 +82,8 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: out/*.dmg
           fail_on_unmatched_files: false
           body: |
