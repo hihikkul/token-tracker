@@ -71,7 +71,10 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .lw-r span { font-size: 13px; color: var(--ink2); }
 .lw-r small { font-size: 12.5px; color: var(--muted); }
 .lw-r strong { margin-left: auto; font-size: 22px; letter-spacing: -.02em; line-height: 1; }
-.lw .track { margin-top: 7px; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.lw .track { position: relative; margin-top: 7px; height: 6px; border-radius: 3px; background: var(--track); }
+/* pace line: how much of the window's time is still left. A bar shorter than the line means
+   the quota is going faster than the clock, so it would run out before the reset. */
+.lw .track b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); opacity: .85; pointer-events: none; }
 .lw .track i { display: block; height: 100%; border-radius: 3px; transition: width .4s cubic-bezier(.16, 1, .3, 1); }
 .lim .msg { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
 
@@ -990,6 +993,14 @@ function limitsView() {
         const big = el('strong', '', Math.round(left) + '%'); if (used >= 75) big.style.color = `var(--${sv})`; r.append(big);
         const tr = el('div', 'track'); const fill = el('i'); fill.style.width = Math.max(0, Math.min(100, left)) + '%';
         fill.style.background = used < 50 ? `var(--${src})` : `var(--${sv})`; tr.append(fill);
+        const pace = paceLeft(w);
+        if (pace != null) {
+          const mark = el('b'); mark.style.left = (100 * pace) + '%'; tr.append(mark);
+          const ahead = left - 100 * pace;
+          tr.title = `시간은 ${Math.round(100 * pace)}% 남았고 한도는 ${Math.round(left)}% 남음 · ` +
+            (ahead >= 0 ? '이 속도면 리셋 전에 넉넉해요' : '이 속도면 리셋 전에 바닥나요');
+          if (ahead < -10 && used < 75) big.style.color = 'var(--warning)';
+        }
         row.append(r, tr); c.append(row);
       }
       if (l.message) c.append(el('div', 'msg', koMessage(l.message)));
@@ -998,6 +1009,14 @@ function limitsView() {
     }
   }
   box.replaceChildren(...cards); box.hidden = st.view !== 'main' || !cards.length;
+}
+// share of the window's time still to go (0..1), from its reset time and length
+function paceLeft(w) {
+  const mins = w.window_minutes || ({ '5h': 300, '5시간': 300, 'Weekly': 10080, '주간': 10080 })[w.label] ||
+    (/^Weekly/.test(w.label || '') ? 10080 : null);
+  if (!mins || !w.resets_at) return null;
+  const left = (w.resets_at - Date.now() / 1000) / (mins * 60);
+  return left > 0 && left <= 1 ? left : null;
 }
 async function loadLimits() {
   try { const r = await fetch('/api/limits', { cache: 'no-store' }); if (r.ok) { LIMITS = await r.json(); limitsView(); } } catch (e) {}

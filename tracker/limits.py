@@ -208,6 +208,7 @@ def fetch_claude(db, force=False):
                     continue
                 label, order = CLAUDE_LABELS.get(key, (key.replace("_", " "), 9))
                 windows.append({"key": key, "label": label, "order": order,
+                                "window_minutes": 300 if key == "five_hour" else 10080 if key.startswith("seven_day") else None,
                                 "used_percent": float(v["utilization"]),
                                 "resets_at": parse_ts(v.get("resets_at"))})
             windows.sort(key=lambda w: w["order"])
@@ -249,6 +250,7 @@ def _codex_one(snap, now):
         stale = bool(reset and reset < now)  # window already rolled over since last use
         out["windows"].append({
             "key": w["key"], "label": _window_label(w.get("window_minutes")),
+            "window_minutes": w.get("window_minutes"),
             "used_percent": 0.0 if stale else w["used_percent"],
             "resets_at": None if stale else reset,
             "note": "Reset" if stale else "",

@@ -29,6 +29,16 @@ C = {
 SHORT = {**NAMES, 'claude': 'Claude', 'gemini': 'Gemini CLI'}
 
 
+def pace_left(w):
+    """Share of the window's time still to go (0..1), or None when its length is unknown."""
+    label = w.get("label") or ""
+    mins = w.get("window_minutes") or (300 if label in ("5h", "5시간") else 10080 if label.startswith(("Weekly", "주간")) else None)
+    if not mins or not w.get("resets_at"):
+        return None
+    left = (float(w["resets_at"]) - time.time()) / (mins * 60)
+    return left if 0 < left <= 1 else None
+
+
 def needs_signin(src, lim):
     """Claude was set up on this PC but its login can no longer be renewed by itself."""
     return src == "claude" and lim.get("status") in ("relogin", "auth", "expired")
@@ -556,6 +566,22 @@ class Widget:
         # The tightest applicable quota limits use, even if 5h is still available.
         return max(wins, key=lambda w: float(w.get('used_percent') or 0)) if wins else None
 
+    def _pace_bar(self, parent, src, w, used):
+        """Remaining-quota bar with a white line at the share of time still left in the window:
+        a bar shorter than the line is burning faster than the clock."""
+        width, height = 240, 10
+        cv = tk.Canvas(parent, width=width, height=height, bg=C["tip"], highlightthickness=0)
+        cv.pack(anchor="w", pady=(2, 0))
+        y0, y1 = 3, height - 3
+        cv.create_rectangle(0, y0, width, y1, fill=C["track"], outline="")
+        left = max(0.0, min(1.0, (100 - used) / 100))
+        if left > 0:
+            cv.create_rectangle(0, y0, max(2, width * left), y1, fill=ring_color(src, used), outline="")
+        pace = pace_left(w)
+        if pace is not None:
+            x = round(width * pace)
+            cv.create_rectangle(x - 1, 0, x + 1, height, fill=C["ink"], outline="")
+
     @staticmethod
     def _tip_windows(src, wins):
         if src not in ('antigravity', 'gemini') or not wins:
@@ -751,6 +777,7 @@ class Widget:
                     note = reset_in(w["resets_at"]) if w.get("resets_at") else ("Reset" if w.get("note") else "")
                     lab(row, note, C["muted"], 9, side="left")
                     lab(row, f"{100 - used:.0f}%", num_color(used), 10, True, font=NUM_FONT, side="right")
+                    self._pace_bar(inner, src, w, used)
                 if src in ('antigravity', 'gemini'):
                     detail = lab(inner, f"{len(wins)} models · View details in dashboard", C['ink2'], 8,
                                  anchor='w', pady=(3, 0))
