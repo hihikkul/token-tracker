@@ -111,7 +111,17 @@ def apply(expected):
                 rel = os.path.relpath(src, tmp)
                 dst = _root() / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
+                try:
+                    shutil.copy2(src, dst)
+                except PermissionError:
+                    # a running exe can't be overwritten on Windows, but it can be renamed aside
+                    aside = dst.with_name(dst.name + ".old")
+                    try:
+                        aside.unlink()
+                    except OSError:
+                        pass
+                    os.replace(dst, aside)
+                    shutil.copy2(src, dst)
 
 
 def _git(*args):

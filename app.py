@@ -101,6 +101,11 @@ def main():
         print(export(db, a.export), "->", a.export)
         return
 
+    for old in paths.APP_ROOT.glob("*.old"):  # a launcher renamed aside by the last update
+        try:
+            old.unlink()
+        except OSError:
+            pass
     port = a.port or paths.load_config().get("port", 8765)
     if a.wait_port:  # the old copy is still closing after an update
         from tracker import updater
