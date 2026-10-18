@@ -1173,7 +1173,9 @@ function globalView() {
   card.replaceChildren(top, wrap);
 }
 async function loadRanking() {
-  loadGlobal();
+  // the public ranking stays hidden until it is released (config: "public_ranking": true)
+  $('global-card').style.display = SOURCE_SETTINGS.public_ranking ? '' : 'none';
+  if (SOURCE_SETTINGS.public_ranking) loadGlobal();
   const card = $('rank-card');
   if (!RANK) card.replaceChildren(el('div', 'empty', '불러오는 중…'));
   try {

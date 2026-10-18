@@ -47,6 +47,7 @@ def make_handler(engine):
                     'source_names': NAMES, 'version': updater.local_version(),
                     'widget': {k: cfg.get('widget', {}).get(k) for k in ('font','number_font','opacity','topmost','taskbar')},
                     'auto_update': cfg.get('auto_update', True),
+                    'public_ranking': bool(cfg.get('public_ranking', False)),  # not released yet
                     'subscription_usd_month': cfg.get('subscription_usd_month', {}),
                     'subscription_plans': cfg.get('subscription_plans', {}),
                     'plan_options': ranking.PLAN_OPTIONS,
