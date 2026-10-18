@@ -9,7 +9,7 @@
 //   GET    /v1/groups/:code/ranking?period=day|week|month&window=...  (Bearer token)
 //   DELETE /v1/groups/:code/me                                         (Bearer token)
 //
-// Public ranking (opt-in, everyone who turns it on, ordered by usage):
+// Public ranking (opt-in, ordered by API-equivalent usage / subscription):
 //   POST   /v1/global/join                {nick}                      -> {member_id, token}
 //   PUT    /v1/global/score               same body as a group score  (Bearer token)
 //   GET    /v1/global/ranking?period=...&window=...  -> top 100, your place, participant count
@@ -169,25 +169,34 @@ export default {
       const period = PERIODS.includes(url.searchParams.get('period')) ? url.searchParams.get('period') : 'week';
       const win = cleanWindow(url.searchParams.get('window'));
       if (!win) return err(400, 'window required');
-      // everyone in the same calendar window, by usage; nicknames only
+      // Full-period prices only, just like the group ranking. Unknown/free subscriptions
+      // and zero API usage are not participants for this window.
+      const eligible = 'FROM scores s JOIN members m ON m.id = s.member_id ' +
+        'WHERE m.group_code = ? AND s.period = ? AND s.window = ? ' +
+        'AND s.calculation_version = 2 AND s.api > 0 AND s.sub > 0';
       const { results } = await env.DB.prepare(
-        'SELECT m.id, m.nick, m.plans, s.usage, s.tokens FROM scores s JOIN members m ON m.id = s.member_id ' +
-        'WHERE m.group_code = ? AND s.period = ? AND s.window = ? AND s.usage > 0 ORDER BY s.usage DESC LIMIT ?',
+        'SELECT m.id, m.nick, m.plans, s.api, s.sub, (1.0 * s.api / s.sub) AS ratio, s.usage, s.tokens ' +
+        eligible + ' ORDER BY ratio DESC, s.api DESC, m.id ASC LIMIT ?',
       ).bind(GLOBAL, period, win, TOP).all();
-      const total = await env.DB.prepare(
-        'SELECT COUNT(*) AS n FROM scores s JOIN members m ON m.id = s.member_id WHERE m.group_code = ? AND s.period = ? AND s.window = ? AND s.usage > 0',
-      ).bind(GLOBAL, period, win).first('n');
-      const mine = await env.DB.prepare('SELECT usage, tokens FROM scores WHERE member_id = ? AND period = ? AND window = ?')
+      const total = await env.DB.prepare('SELECT COUNT(*) AS n ' + eligible)
+        .bind(GLOBAL, period, win).first('n');
+      const mine = await env.DB.prepare('SELECT api, sub, usage, tokens, calculation_version FROM scores WHERE member_id = ? AND period = ? AND window = ?')
         .bind(me.id, period, win).first();
+      const ratio = mine && mine.sub > 0 ? mine.api / mine.sub : null;
       let place = null;
-      if (mine && mine.usage > 0) {
+      if (mine && mine.api > 0 && mine.sub > 0 && mine.calculation_version === 2) {
         place = 1 + await env.DB.prepare(
-          'SELECT COUNT(*) AS n FROM scores s JOIN members m ON m.id = s.member_id WHERE m.group_code = ? AND s.period = ? AND s.window = ? AND s.usage > ?',
-        ).bind(GLOBAL, period, win, mine.usage).first('n');
+          'SELECT COUNT(*) AS n ' + eligible + ' AND ((1.0 * s.api / s.sub) > ? ' +
+          'OR ((1.0 * s.api / s.sub) = ? AND s.api > ?) ' +
+          'OR ((1.0 * s.api / s.sub) = ? AND s.api = ? AND m.id < ?))',
+        ).bind(GLOBAL, period, win, ratio, ratio, mine.api, ratio, mine.api, me.id).first('n');
       }
       return json({
-        period, window: win, total, place, usage: mine ? mine.usage : 0, tokens: mine ? mine.tokens : 0,
-        members: results.map((r, i) => ({ rank: i + 1, nick: r.nick, plans: r.plans, usage: r.usage, tokens: r.tokens, me: r.id === me.id })),
+        period, window: win, total, place, ratio, api: mine ? mine.api : 0, sub: mine ? mine.sub : 0,
+        usage: mine ? mine.usage : 0, tokens: mine ? mine.tokens : 0, plans: me.plans || '',
+        no_sub: !!mine && mine.sub <= 0,
+        members: results.map((r, i) => ({ rank: i + 1, nick: r.nick, plans: r.plans,
+          api: r.api, sub: r.sub, ratio: r.ratio, usage: r.usage, tokens: r.tokens, me: r.id === me.id })),
       });
     }
 

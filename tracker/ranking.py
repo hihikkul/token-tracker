@@ -11,11 +11,13 @@ Free and unknown selected plans never fall back to a detected paid plan.
 The ranking server (server/worker.js) receives nickname, plan names and, per period,
 the window, three dollar amounts (API-equivalent spend counted in the ratio, the
 subscription share, API-equivalent spend of every tool) and the token total. Nothing else
-leaves the PC. Groups rank by ratio; the opt-in public ranking ranks by usage.
+leaves the PC. Both groups and the opt-in public ranking rank by ratio.
 """
 import json
 import hashlib
 import secrets
+import re
+import unicodedata
 import threading
 import time
 import urllib.error
@@ -53,12 +55,43 @@ PLAN_OPTIONS = {
                'ultra_5x': ('Google AI Ultra 5x', 99.99), 'ultra': ('Google AI Ultra 20x', 249.99),
                'other': ('Other plan', None)},
 }
-PLAN_PRICES = {
-    "claude": {"free": 0, "pro": 20, "max 5x": 100, "max 20x": 200, "max": 100, "team": 25},
-    "codex": {"free": 0, "go": 8, "plus": 20, "pro": 200, 'pro 100': 100, 'pro 200': 200,
-              'pro 500': 500, "team": 25, "business": 25,
-              "business premium": 125},
+def _plan_key(value):
+    """Match display names, internal IDs and account suffixes without guessing prices."""
+    if not isinstance(value, str):
+        return ''
+    value = unicodedata.normalize('NFKC', value).casefold().split('·', 1)[0]
+    value = value.replace('×', 'x')
+    return re.sub(r'[^a-z0-9]+', '', value)
+
+
+# One source of truth for selected AND detected prices, including unknown/free plans.
+PLAN_ALIASES = {
+    'claude': {'max': 'max_5x', 'team': 'team', 'claude pro': 'pro',
+               'claude max 5x': 'max_5x', 'claude max 20x': 'max_20x'},
+    'codex': {'pro': 'pro_200', 'team': 'business',
+              'chatgpt plus': 'plus', 'chatgpt pro': 'pro_200',
+              'chatgpt pro 100': 'pro_100', 'chatgpt pro 200': 'pro_200',
+              'chatgpt pro 500': 'pro_500', 'chatgpt business': 'business',
+              'self_serve_business_prolite': 'business_premium'},
+    'gemini': {'google ai ultra': 'ultra', 'gemini pro': 'pro', 'ultra': 'ultra',
+               'google ai ultra 20x': 'ultra', 'ultra 5x': 'ultra_5x',
+               'gemini advanced': 'pro', 'google one ai premium': 'pro',
+               'ai pro': 'pro', 'ai ultra': 'ultra', 'ultra 20x': 'ultra',
+               'g1-pro-tier': 'pro', 'g1-ultra-tier': 'ultra',
+               'free-tier': 'free', 'legacy-tier': 'free'},
 }
+PLAN_PRICES = {}
+for _src, _options in PLAN_OPTIONS.items():
+    _prices = {}
+    for _id, (_name, _price) in _options.items():
+        _prices[_plan_key(_id)] = _price
+        _prices[_plan_key(_name)] = _price
+        _prices[_plan_key(NAMES[_src] + ' ' + _name)] = _price
+        if _src == 'gemini':
+            _prices[_plan_key(_name.removeprefix('Google AI '))] = _price
+    _prices.update({_plan_key(alias): _options[target][1]
+                    for alias, target in PLAN_ALIASES.get(_src, {}).items()})
+    PLAN_PRICES[_src] = _prices
 PERIODS = ("day", "week", "month")
 SYNC_EVERY = 15 * 60
 
@@ -80,13 +113,13 @@ def _plan(limits, src):
     if src == 'gemini' and not lim.get('plan'):
         lim = (limits or {}).get('antigravity') or lim
     if lim.get("accounts"):
-        return lim["accounts"][0].get("plan")
+        return lim["accounts"][0].get("plan") or lim.get('plan')
     return lim.get("plan")
 
 
 def subscriptions(limits, cfg=None):
     """{src: {"usd": float|None, "plan": str|None, "from": "config"|"plan"|None}}"""
-    cfg = cfg or paths.load_config()
+    cfg = cfg if cfg is not None else paths.load_config()
     manual = cfg.get("subscription_usd_month") or {}
     plans = cfg.get('subscription_plans') or {}
     selected = {'gemini' if src == 'antigravity' else src for src in enabled(cfg)}
@@ -105,7 +138,7 @@ def subscriptions(limits, cfg=None):
         if isinstance(m, (int, float)) and m > 0:
             out[src] = {"usd": float(m), "plan": plan, "from": "config"}
             continue
-        key = (plan or "").lower().split(" ·")[0].strip()
+        key = _plan_key(plan)
         price = PLAN_PRICES.get(src, {}).get(key)
         out[src] = {"usd": float(price) if price is not None else None, "plan": plan,
                     "from": "plan" if price is not None else None}
@@ -117,7 +150,7 @@ def account_key(account):
 
 
 def codex_subscriptions(limits, cfg=None):
-    cfg = cfg or paths.load_config()
+    cfg = cfg if cfg is not None else paths.load_config()
     accounts = ((limits or {}).get('codex') or {}).get('accounts') or []
     overrides = (cfg.get('account_plans') or {}).get('codex') or {}
     rows, seen = [], set()
@@ -171,7 +204,7 @@ def _spend(db, since_ts, until_ts=None, cfg=None):
 
 def report(db, limits, cfg=None):
     """쌀먹 numbers per period, in total and per tool."""
-    cfg = cfg or paths.load_config()
+    cfg = cfg if cfg is not None else paths.load_config()
     subs = subscriptions(limits, cfg)
     codex = codex_subscriptions(limits, cfg) if 'codex' in enabled(cfg) else []
     if codex:
@@ -222,7 +255,7 @@ class RankingError(Exception):
 
 
 def server_url(cfg=None):
-    cfg = cfg or paths.load_config()
+    cfg = cfg if cfg is not None else paths.load_config()
     settings = cfg.get('ranking') or {}
     url = (settings.get('server') or DEFAULT_SERVER).rstrip('/')
     host = urlparse(url).hostname
@@ -254,47 +287,101 @@ def _call(method, path, body=None, token=None, cfg=None):
         raise RankingError("Could not connect to the public ranking server. Update Token Tracker and check your connection.")
 
 
+def _groups(cfg):
+    if paths.migrate_ranking(cfg):
+        paths.save_config(cfg)
+    return [g for g in cfg.get('ranking_groups', []) if g.get('code') and g.get('token')]
+
+
+def _group(cfg, code=None):
+    groups = _groups(cfg)
+    if not code:
+        return groups[0] if groups else None
+    code = str(code).strip().upper()
+    if not re.fullmatch(r'[A-Z2-9]{4}-[A-Z2-9]{4}', code):
+        raise RankingError('Invite code not found')
+    return next((g for g in groups if g['code'] == code), None)
+
+
 def state(cfg=None):
-    cfg = cfg or paths.load_config()
-    r = cfg.get("ranking") or {}
-    return {"server": bool(server_url(cfg)), 'server_url': server_url(cfg),
-            'invite_url': server_url(cfg) + '/?invite=' + str(r.get('code') or ''),
-            "joined": bool(r.get("code") and r.get("token")),
-            "code": r.get("code"), "group_name": r.get("group_name"), "nick": r.get("nick") or ""}
+    cfg = cfg if cfg is not None else paths.load_config()
+    return {'server': bool(server_url(cfg)), 'server_url': server_url(cfg),
+            'groups': [dict(code=g['code'], group_name=g.get('group_name'), nick=g.get('nick') or '',
+                            invite_url=server_url(cfg) + '/?invite=' + g['code'], joined=True,
+                            member_count=g.get('member_count')) for g in _groups(cfg)],
+            'global': global_state(cfg)}
 
 
-def _save(**kv):
+def _save_group(res, nick):
     cfg = paths.load_config()
-    cfg.setdefault("ranking", {}).update(kv)
+    groups = _groups(cfg)
+    entry = dict(code=res['code'], group_name=res.get('name'), member_id=res['member_id'],
+                 token=res['token'], nick=nick)
+    for i, group in enumerate(groups):
+        if group['code'] == entry['code']:
+            groups[i] = entry
+            break
+    else:
+        groups.append(entry)
+    cfg['ranking_groups'] = groups
     paths.save_config(cfg)
+    _last_sync['t'] = 0.0
 
 
 def create(group_name, nick):
-    res = _call("POST", "/v1/groups", {"group_name": group_name, "nick": nick})
-    _save(code=res["code"], group_name=res.get("name"), member_id=res["member_id"], token=res["token"], nick=nick)
+    res = _call('POST', '/v1/groups', {'group_name': group_name, 'nick': nick})
+    _save_group(res, nick)
     return res
 
 
 def join(code, nick):
     code = code.strip().upper()
-    res = _call("POST", f"/v1/groups/{code}/join", {"nick": nick})
-    _save(code=res["code"], group_name=res.get("name"), member_id=res["member_id"], token=res["token"], nick=nick)
+    if not re.fullmatch(r'[A-Z2-9]{4}-[A-Z2-9]{4}', code):
+        raise RankingError('Invite code not found')
+    cfg = paths.load_config()
+    existing = _group(cfg, code)
+    if existing:
+        try:
+            # Reuse a live membership (no duplicate participant), but allow rejoining
+            # when the old token has expired or was removed from the server.
+            _call('PUT', f'/v1/groups/{code}/score', {'nick': nick, 'periods': {}, 'calculation_version': 2},
+                  token=existing['token'], cfg=cfg)
+        except RankingError as error:
+            if str(error) not in ('bad token', 'Membership expired. Join the group again.'):
+                raise
+        else:
+            existing['nick'] = nick
+            paths.save_config(cfg)
+            _last_sync['t'] = 0.0
+            return dict(existing, name=existing.get('group_name'))
+    res = _call('POST', f'/v1/groups/{code}/join', {'nick': nick})
+    _save_group(res, nick)
     return res
 
 
-def leave():
+def leave(code=None):
     cfg = paths.load_config()
-    r = cfg.get("ranking") or {}
-    if r.get("code") and r.get("token"):
-        try:
-            _call("DELETE", f"/v1/groups/{r['code']}/me", token=r["token"], cfg=cfg)
-        except RankingError:
-            pass  # leave locally even if the server is unreachable
-    _save(code=None, group_name=None, member_id=None, token=None)
+    group = _group(cfg, code)
+    if not group:
+        return
+    try:
+        _call('DELETE', f"/v1/groups/{group['code']}/me", token=group['token'], cfg=cfg)
+    except RankingError:
+        pass  # leave locally even if the server is unreachable
+    cfg['ranking_groups'] = [g for g in _groups(cfg) if g['code'] != group['code']]
+    paths.save_config(cfg)
 
 
-def set_nick(nick):
-    _save(nick=nick)
+def set_nick(code=None, nick=None):
+    if nick is None:  # pre-multi-group API: set_nick(nick)
+        code, nick = None, code
+    cfg = paths.load_config()
+    group = _group(cfg, code)
+    if not group:
+        raise RankingError('You have not joined a group yet')
+    group['nick'] = nick or ''
+    paths.save_config(cfg)
+    _last_sync['t'] = 0.0
 
 
 _lock = threading.Lock()
@@ -313,8 +400,9 @@ def _period_tokens(db):
 
 def _score_body(db, limits, cfg, nick):
     rep = report(db, limits, cfg)
-    plans = " · ".join(f"{NAMES[t.get('source',s)]} {t['plan']}" if t.get("plan") else NAMES[t.get('source',s)]
-                       for s, t in rep["periods"]["month"]["tools"].items() if t["sub"])
+    plans = ' · '.join(f"{NAMES[t.get('source', s)]} {t['plan'].split('·', 1)[0].strip()}"
+                       if t.get('plan') else NAMES[t.get('source', s)]
+                       for s, t in rep['periods']['month']['tools'].items() if t['sub'])
     tokens = _period_tokens(db)
     # usage = API-equivalent spend of every tool, even ones without a known subscription price
     return {"nick": nick or "", "plans": plans, 'calculation_version': 2,
@@ -328,32 +416,43 @@ def sync(db, limits, force=False):
     """Send this PC's numbers to the group and/or the public ranking. Quiet no-op when not joined
     or synced recently."""
     cfg = paths.load_config()
-    r = cfg.get("ranking") or {}
-    g = cfg.get("ranking_global") or {}
-    in_group = bool(r.get("code") and r.get("token"))
-    in_global = bool(g.get("token"))
-    if not ((in_group or in_global) and server_url(cfg)):
+    groups = _groups(cfg)
+    global_member = cfg.get('ranking_global') or {}
+    targets = [(f"/v1/groups/{g['code']}/score", g) for g in groups]
+    if global_member.get('token'):
+        targets.append(('/v1/global/score', global_member))
+    if not (targets and server_url(cfg)):
         return False
     with _lock:
-        if not force and time.time() - _last_sync["t"] < SYNC_EVERY:
+        if not force and time.time() - _last_sync['t'] < SYNC_EVERY:
             return False
-        if in_group:
-            _call("PUT", f"/v1/groups/{r['code']}/score", _score_body(db, limits, cfg, r.get("nick")),
-                  token=r["token"], cfg=cfg)
-        if in_global:
-            _call("PUT", "/v1/global/score", _score_body(db, limits, cfg, g.get("nick")), token=g["token"], cfg=cfg)
-        _last_sync["t"] = time.time()
+        body = _score_body(db, limits, cfg, '')
+        errors = []
+        for path, member in targets:
+            try:
+                _call('PUT', path, dict(body, nick=member.get('nick') or ''),
+                      token=member['token'], cfg=cfg)
+            except RankingError as error:
+                errors.append(error)  # one expired membership must not block other groups/global
+        _last_sync['t'] = time.time()
+        if errors:
+            raise errors[0]
         return True
 
 
 # ------------------------------------------------------------------ public ranking
 def global_state(cfg=None):
-    cfg = cfg or paths.load_config()
+    cfg = cfg if cfg is not None else paths.load_config()
     g = cfg.get("ranking_global") or {}
-    return {"joined": bool(g.get("token")), "nick": g.get("nick") or (cfg.get("ranking") or {}).get("nick") or ""}
+    groups = cfg.get('ranking_groups') or []
+    fallback = groups[0].get('nick') if groups else (cfg.get('ranking') or {}).get('nick')
+    return {'joined': bool(g.get('token')), 'nick': g.get('nick') or fallback or ''}
 
 
 def global_join(nick):
+    if global_state()['joined']:
+        global_set_nick(nick)
+        return {'ok': True}
     res = _call("POST", "/v1/global/join", {"nick": nick})
     cfg = paths.load_config()
     cfg["ranking_global"] = {"member_id": res["member_id"], "token": res["token"], "nick": nick}
@@ -365,11 +464,14 @@ def global_join(nick):
 def global_leave():
     cfg = paths.load_config()
     g = cfg.get("ranking_global") or {}
-    if g.get("token"):
+    if g.get('token'):
+        # Keep the token on connection failures so deletion can be retried. Otherwise
+        # the UI would promise erased records while leaving an unreachable orphan.
         try:
-            _call("DELETE", "/v1/global/me", token=g["token"], cfg=cfg)  # removes the scores too
-        except RankingError:
-            pass
+            _call('DELETE', '/v1/global/me', token=g['token'], cfg=cfg)
+        except RankingError as error:
+            if str(error) not in ('bad token', 'Membership expired. Join the group again.'):
+                raise
     cfg["ranking_global"] = {}
     paths.save_config(cfg)
 
@@ -397,10 +499,10 @@ def global_ranking(db, limits, period):
     return res
 
 
-def ranking(db, limits, period):
+def ranking(db, limits, period, code=None):
     cfg = paths.load_config()
-    r = cfg.get("ranking") or {}
-    if not (r.get("code") and r.get("token")):
+    r = _group(cfg, code)
+    if not r:
         raise RankingError("You have not joined a group yet")
     try:
         sync(db, limits, force=time.time() - _last_sync["t"] > 120)
@@ -409,9 +511,18 @@ def ranking(db, limits, period):
     period = period if period in PERIODS else "week"
     win = windows()[period][0]
     res = _call("GET", f"/v1/groups/{r['code']}/ranking?period={period}&window={win}", token=r["token"], cfg=cfg)
-    res["nick"] = r.get("nick")
+    res['nick'] = r.get('nick')
+    count = len(res.get('members') or [])
+    if r.get('member_count') != count or (res.get('name') and r.get('group_name') != res['name']):
+        # Re-read after a network call so concurrent create/leave changes are retained.
+        latest = paths.load_config()
+        current = _group(latest, r['code'])
+        if current:
+            current['member_count'] = count
+            current['group_name'] = res.get('name') or current.get('group_name')
+            paths.save_config(latest)
     return res
 
 
 def random_nick():
-    return "User-" + secrets.token_hex(2)
+    return '사용자-' + secrets.token_hex(2)

@@ -48,11 +48,14 @@ class ClaudeLogin(unittest.TestCase):
         root = Path(cls.tmp.name)
         (root / "claude").mkdir()
         cls.cred = root / "claude" / ".credentials.json"
-        os.environ.update(TOKENTRACKER_HOME=str(root / "data"), CLAUDE_CONFIG_DIR=str(root / "claude"),
-                          NO_PROXY="127.0.0.1")
+        from unittest.mock import patch
+        cls.env = patch.dict(os.environ, TOKENTRACKER_HOME=str(root / 'data'),
+                             CLAUDE_CONFIG_DIR=str(root / 'claude'), NO_PROXY='127.0.0.1')
+        cls.env.start()
         from tracker import limits, db
         cls.limits = limits
         port = cls.srv.server_address[1]
+        cls.old_urls = (limits.CLAUDE_TOKEN_URL, limits.CLAUDE_URL)
         limits.CLAUDE_TOKEN_URL = f"http://127.0.0.1:{port}/token"
         limits.CLAUDE_URL = f"http://127.0.0.1:{port}/usage"
         cls.db = db.DB(Path(cls.tmp.name) / "t.db")
@@ -60,6 +63,10 @@ class ClaudeLogin(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.srv.shutdown()
+        cls.srv.server_close()
+        cls.db.conn.close()
+        cls.limits.CLAUDE_TOKEN_URL, cls.limits.CLAUDE_URL = cls.old_urls
+        cls.env.stop()
         cls.tmp.cleanup()
 
     def write(self, **over):

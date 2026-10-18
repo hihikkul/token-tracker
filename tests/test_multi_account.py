@@ -23,7 +23,8 @@ class MultiAccount(unittest.TestCase):
                       'windows':[{'key':'secondary','window_minutes':10080,'resets_at':time.time()+1000,'used_percent':20}]}
             collectors._keep_limits(snaps,snapshot,account,{},True)
         self.db.set_kv('codex_limits_by_account',snaps)
-        accounts=limits.codex_limits(self.db)['accounts']
+        with patch('tracker.ripple.chatgpt_snapshots', return_value=[]):
+            accounts=limits.codex_limits(self.db)['accounts']
         self.assertEqual({a['account'] for a in accounts},{'a','b'})
 
     def test_monthly_fees_and_usage_are_per_account(self):

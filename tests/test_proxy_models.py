@@ -6,13 +6,22 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+
+class IsolatedEnvironment(unittest.TestCase):
+    def setUp(self):
+        env = patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tracker.collectors import claude_log_source  # noqa: E402
 
 
-class ProxyModels(unittest.TestCase):
+class ProxyModels(IsolatedEnvironment):
     def test_vendor_rules(self):
         cases = {
             "claude-opus-5-5": "claude", "claude-haiku-5-5": "claude", "anthropic/claude-opus-5": "claude",
@@ -37,7 +46,7 @@ class ProxyModels(unittest.TestCase):
             (proj / "s.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
             os.environ.update(TOKENTRACKER_HOME=str(root / "data"), CLAUDE_CONFIG_DIR=str(root / "claude"))
             from tracker import collectors, db
-            d = db.DB(root / "t.db")
+            d = db.DB(':memory:')
             # a record stored by an older version under Claude
             d.upsert_records([{"uid": "c:old:1", "source": "claude", "ts": 1, "model": "gpt-6.1-sol",
                                "input": 1, "output": 1}])
@@ -68,7 +77,7 @@ class UpdaterRoot(unittest.TestCase):
                 self.assertTrue(updater.is_frozen())
 
 
-class ProxyAccount(unittest.TestCase):
+class ProxyAccount(IsolatedEnvironment):
     def test_gpt_turns_get_clauderipples_first_usable_login(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -86,7 +95,7 @@ class ProxyAccount(unittest.TestCase):
             os.environ.update(TOKENTRACKER_HOME=str(root / "data"), CLAUDE_CONFIG_DIR=str(root / "claude"),
                               CLAUDERIPPLE_HOME=str(ripple), CODEX_HOME=str(root / "codex"))
             from tracker import collectors, db
-            d = db.DB(root / "t.db")
+            d = db.DB(':memory:')
             d.upsert_records([{"uid": "c:old:2", "source": "codex", "ts": 1, "model": "gpt-6.1-sol",
                                "input": 1, "output": 1}])
             collectors.scan_claude(d, {})
@@ -103,7 +112,7 @@ class ProxyAccount(unittest.TestCase):
             self.assertEqual(proxy_chatgpt_account(), "acct-codex")
 
 
-class RippleQuota(unittest.TestCase):
+class RippleQuota(IsolatedEnvironment):
     def test_live_quota_of_the_account_in_use_leads(self):
         import threading
         from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -136,13 +145,15 @@ class RippleQuota(unittest.TestCase):
             os.environ.update(TOKENTRACKER_HOME=str(root / "data"), CLAUDERIPPLE_HOME=str(ripple),
                               CODEX_HOME=str(root / "codex"))
             from tracker import db, limits
-            d = db.DB(root / "t.db")
+            d = db.DB(':memory:')
             # the Codex CLI last reported the Plus account an hour ago
             d.set_kv("codex_limits_by_account", {"plan:plus:codex": {
                 "ts": now - 3600, "limit_id": "codex", "plan": "plus", "account": "acct-plus",
                 "windows": [{"key": "primary", "used_percent": 20, "window_minutes": 300, "resets_at": now + 600}]}})
             out = limits.codex_limits(d)
             srv.shutdown()
+            srv.server_close()
+            d.conn.close()
         self.assertEqual(out["accounts"][0]["account"], "acct-biz")
         self.assertEqual(out["accounts"][0]["plan"], "Business Premium")
         self.assertEqual(out["windows"][0]["used_percent"], 31.0)

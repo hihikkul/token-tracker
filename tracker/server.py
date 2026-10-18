@@ -47,7 +47,6 @@ def make_handler(engine):
                     'source_names': NAMES, 'version': updater.local_version(),
                     'widget': {k: cfg.get('widget', {}).get(k) for k in ('font','number_font','opacity','topmost','taskbar')},
                     'auto_update': cfg.get('auto_update', True),
-                    'public_ranking': bool(cfg.get('public_ranking', False)),  # not released yet
                     'subscription_usd_month': cfg.get('subscription_usd_month', {}),
                     'subscription_plans': cfg.get('subscription_plans', {}),
                     'plan_options': ranking.PLAN_OPTIONS,
@@ -63,16 +62,19 @@ def make_handler(engine):
                 rep = ranking.report(engine.db, ranking_limits(engine))
                 rep["ranking"] = ranking.state()
                 return self._send(200, rep)
+            if u.path == '/api/ranking/state':
+                return self._send(200, ranking.state())
             if u.path == "/api/ranking/global":
                 try:
-                    res = ranking.global_ranking(engine.db, engine.snapshot.get("limits"), (q.get("period") or ["week"])[0])
+                    res = ranking.global_ranking(engine.db, ranking_limits(engine), (q.get("period") or ["week"])[0])
                 except ranking.RankingError as e:
                     return self._send(200, {"error": str(e), "state": ranking.global_state()})
                 res["state"] = ranking.global_state()
                 return self._send(200, res)
             if u.path == "/api/ranking":
                 try:
-                    res = ranking.ranking(engine.db, engine.snapshot.get("limits"), (q.get("period") or ["week"])[0])
+                    res = ranking.ranking(engine.db, ranking_limits(engine), (q.get("period") or ["week"])[0],
+                                          (q.get('code') or [None])[0])
                 except ranking.RankingError as e:
                     return self._send(200, {"error": str(e), "state": ranking.state()})
                 res["state"] = ranking.state()
@@ -133,6 +135,7 @@ def make_handler(engine):
             if path.startswith("/api/ranking/"):
                 b = self._body()
                 nick = str(b.get("nick") or "").strip()[:24]
+                joined = None
                 try:
                     if path == "/api/ranking/global/join":
                         ranking.global_join(nick or ranking.random_nick())
@@ -141,25 +144,25 @@ def make_handler(engine):
                     elif path == "/api/ranking/global/nick":
                         ranking.global_set_nick(nick or ranking.random_nick())
                     elif path == "/api/ranking/create":
-                        ranking.create(str(b.get("group_name") or "").strip()[:40] or "token-tracker",
+                        joined = ranking.create(str(b.get("group_name") or "").strip()[:40] or "token-tracker",
                                        nick or ranking.random_nick())
                     elif path == "/api/ranking/join":
-                        ranking.join(str(b.get("code") or ""), nick or ranking.random_nick())
+                        joined = ranking.join(str(b.get("code") or ""), nick or ranking.random_nick())
                     elif path == "/api/ranking/leave":
-                        ranking.leave()
+                        ranking.leave(b.get('code'))
                     elif path == "/api/ranking/nick":
-                        ranking.set_nick(nick)
-                        ranking.sync(engine.db, engine.snapshot.get("limits"), force=True)
+                        ranking.set_nick(b.get('code'), nick or ranking.random_nick())
                     else:
                         return self._send(404, {"error": "not found"})
                 except ranking.RankingError as e:
                     return self._send(200, {"error": str(e), "state": ranking.state()})
-                if path in ("/api/ranking/create", "/api/ranking/join", "/api/ranking/global/join", "/api/ranking/global/nick"):
+                if path in ("/api/ranking/create", "/api/ranking/join", "/api/ranking/nick", "/api/ranking/global/join", "/api/ranking/global/nick"):
                     try:
-                        ranking.sync(engine.db, engine.snapshot.get("limits"), force=True)
+                        ranking.sync(engine.db, ranking_limits(engine), force=True)
                     except ranking.RankingError:
                         pass
-                return self._send(200, {"ok": True, "state": ranking.state()})
+                return self._send(200, {'ok': True, 'state': ranking.state(),
+                                        **({'code': joined['code']} if joined else {})})
             if path == "/api/settings":
                 b = self._body()
                 cfg = paths.load_config()

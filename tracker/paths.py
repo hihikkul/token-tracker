@@ -100,8 +100,8 @@ DEFAULT_CONFIG = {
     "port": 8765,
     "scan_interval_sec": 60,
     "limits_interval_sec": 300,
-    # Monthly subscription you pay, per source (USD). 0 = use the detected plan's list price
-    # (Claude Pro $20, Codex Plus $20…). Gemini can't be detected, so set it here to count it.
+    # Legacy monthly overrides. 0 = use the detected plan's list price.
+    # Login-detected plans share the prices used by subscription_plans.
     "subscription_usd_month": {"claude": 0, "codex": 0, "gemini": 0},
     "subscription_plans": {},  # auto-detect until the user chooses a plan
     "widget": {"x": None, "y": None, "opacity": 0.96, "topmost": True,
@@ -110,13 +110,31 @@ DEFAULT_CONFIG = {
                "font": "", "number_font": ""},  # "" = Segoe UI Variable (Segoe UI on Windows 10)
     "artifact_url": None,
     # group ranking (쌀숭이 랭킹); filled in from the dashboard's ranking page
-    "ranking": {"server": "", "code": None, "group_name": None, "member_id": None, "token": None, "nick": ""},
+    "ranking": {"server": ""},  # keep deployment/server overrides separate from membership
+    "ranking_groups": [],
+    "ranking_global": {},
     "extra_paths": {"claude": [], "codex": [], "gemini": []},
 }
 
 
 def config_path() -> Path:
     return data_dir() / "config.json"
+
+
+def migrate_ranking(cfg):
+    """Move legacy membership once; keep ranking.server and other server settings."""
+    legacy = cfg.get('ranking') or {}
+    if not (legacy.get('code') and legacy.get('token')):
+        return False
+    groups = cfg.setdefault('ranking_groups', [])
+    code = str(legacy['code']).strip().upper()
+    if not any(str(g.get('code', '')).upper() == code for g in groups):
+        groups.append({key: legacy.get(key) for key in
+                       ('code', 'group_name', 'member_id', 'token', 'nick')})
+        groups[-1]['code'] = code
+    for key in ('code', 'group_name', 'member_id', 'token', 'nick'):
+        legacy.pop(key, None)
+    return True
 
 
 def load_config() -> dict:
@@ -137,6 +155,8 @@ def load_config() -> dict:
             p.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
         except OSError:
             pass
+    if migrate_ranking(cfg):
+        save_config(cfg)
     return cfg
 
 

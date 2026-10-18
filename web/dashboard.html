@@ -41,7 +41,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 .skip { position: absolute; left: -999px; top: 8px; background: var(--card); padding: 6px 10px; border-radius: 6px; z-index: 20; }
 .skip:focus { left: 16px; }
-.wrap { max-width: 1240px; margin: 0 auto; padding: 24px 16px 56px; display: grid; gap: 16px; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 24px 16px 56px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .mono { font-family: var(--mono); font-size: .86em; letter-spacing: -.01em; }
 
 /* header */
@@ -50,7 +50,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .brand img { width: 30px; height: 30px; border-radius: 8px; flex: none; }
 .brand h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
 .brand span { color: var(--muted); font-size: 13.5px; }
-.tools { display: flex; gap: 8px; align-items: center; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
 .tag { font-size: 12px; color: var(--muted); border: 1px dashed var(--edge); border-radius: 999px; padding: 3px 10px; }
 .icon { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--edge); background: var(--card); border-radius: 999px; cursor: pointer; color: var(--ink2); transition: color .15s, background-color .15s; }
 .icon:disabled { opacity: .5; cursor: progress; }
@@ -121,7 +121,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .seg.sm button { min-height: 26px; padding: 0 11px; font-size: 13px; }
 
 /* 쌀숭이 랭킹 */
-.rank-view { display: grid; gap: 16px; }
+.rank-view { display: grid; gap: 16px; min-width: 0; }
 .rank-card { padding: 20px 24px 22px; display: flex; flex-direction: column; gap: 14px; }
 .rank-top { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
 .rank-top h2 { margin: 0; font-size: 19px; }
@@ -156,17 +156,60 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
   .rrow { grid-template-columns: minmax(0, 1fr) 6.5rem 3.6rem; gap: 10px; }
   .rrow .rbar, .rrow.rh span:nth-child(2) { display: none; }
 }
-.gk { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) minmax(0, 1.2fr) 6.5rem 5.5rem; gap: 14px; align-items: center; min-height: 44px; padding: 0 12px; margin: 0 -12px; border-radius: 8px; }
-.gk.me { background: var(--card2); }
-.gk .no { font-size: 15px; font-weight: 700; color: var(--muted); text-align: center; }
-.gk .no.top { color: var(--ink); font-size: 18px; }
-.gk b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gk small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gk .rbar { height: 8px; }
-.gk .num { text-align: right; font-size: 13.5px; white-space: nowrap; }
-.gk .num.dim { color: var(--muted); }
-.gk.gap { min-height: 22px; color: var(--muted); }
-@media (max-width: 720px) { .gk { grid-template-columns: 2rem minmax(0, 1fr) 5rem; } .gk .rbar, .gk .num.dim { display: none; } }
+/* Overall ranking: one ratio series; the explicit 나 label also identifies my row. */
+:root { --rank-link: var(--accent); --rank-soft: #edf2ff; --rank-edge: #c6d5ff; --rank-bar: #7d9bf0; --rank-track: #eef1f7; --rank-gold: #977017; --rank-silver: #657185; --rank-bronze: #945b36; }
+:root[data-theme="dark"] { --rank-link: #9abbff; --rank-soft: #1c294c; --rank-edge: #354f89; --rank-bar: #7d9bf0; --rank-track: #262c3b; --rank-gold: #e2bc68; --rank-silver: #b2bed2; --rank-bronze: #dba57f; }
+.rank-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.rank-tab { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 14px; border: 1px solid var(--edge); border-radius: 999px; background: var(--card); cursor: pointer; max-width: 100%; }
+.rank-tab > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-tab[aria-selected="true"] { color: var(--rank-link); background: var(--rank-soft); border-color: var(--rank-edge); font-weight: 700; }
+.rank-tab small { white-space: nowrap; font-size: 11px; padding: 1px 6px; background: var(--card2); color: var(--ink2); border-radius: 999px; }
+.global-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 28px; align-items: start; }
+.global-list { min-width: 0; }
+.gtable { width: 100%; border-collapse: separate; border-spacing: 0 4px; table-layout: fixed; }
+.gtable th { font-size: 11.5px; color: var(--ink2); font-weight: 400; text-align: left; padding: 4px 8px; }
+.gtable th:first-child { width: 48px; text-align: center; }
+.gtable th:nth-child(3) { width: 220px; }
+.gtable th:last-child { width: 84px; text-align: right; }
+.gtable td { padding: 12px 8px; border-block: 1px solid transparent; }
+.gk.me td { background: var(--rank-soft); border-color: var(--rank-edge); }
+.gk.me td:first-child { border-left: 1px solid var(--rank-edge); border-radius: 8px 0 0 8px; }
+.gk.me td:last-child { border-right: 1px solid var(--rank-edge); border-radius: 0 8px 8px 0; }
+.gk .no { text-align: center; font-weight: 700; color: var(--ink2); }
+.gk .no.gold { color: var(--rank-gold); }.gk .no.silver { color: var(--rank-silver); }.gk .no.bronze { color: var(--rank-bronze); }
+.gk .who-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.gk .who-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk small { display: block; color: var(--ink2); font-size: 11.5px; overflow-wrap: anywhere; }
+.me-label { font-size: 10px; color: var(--rank-link); background: var(--card); border-radius: 4px; padding: 1px 5px; flex: none; }
+.gk .rbar { height: 8px; background: var(--rank-track); margin-bottom: 5px; }
+.gk .rbar span { border-radius: 0 4px 4px 0; background: var(--rank-bar); }
+.gk.me .rbar span { background: var(--accent); }
+.gk .amount { font-size: 12px; color: var(--ink2); white-space: nowrap; }
+.gk .multiple { text-align: right; font-size: 19px; font-weight: 700; white-space: nowrap; }
+.gtable .gap td { padding: 0; text-align: center; color: var(--muted); }
+.global-side { display: grid; gap: 18px; min-width: 0; }
+.global-place { background: var(--accent); color: white; border-radius: 10px; padding: 18px; display: grid; gap: 10px; }
+.global-place .place-value { font-size: 31px; font-weight: 700; line-height: 1.2; letter-spacing: -.03em; }
+.global-place .place-value small { font-size: 14px; font-weight: 400; white-space: nowrap; }
+.global-metrics { margin: 0; display: grid; gap: 10px; font-size: 13px; }
+.global-metrics > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; }
+.global-metrics dt { color: var(--ink2); }.global-metrics dd { margin: 0; font-weight: 700; }
+.global-intro { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 40px; }
+.global-intro p { color: var(--ink2); max-width: 540px; line-height: 1.8; }
+.global-join { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; margin: 24px 0 14px; }
+.global-join label { display: grid; gap: 8px; flex: 1 1 180px; font-size: 13px; }
+.global-join input { min-width: 0; width: 100%; height: 44px; padding: 10px 12px; border: 1px solid var(--edge); border-radius: 8px; color: var(--ink); background: var(--card); font: inherit; }
+#global-card .linkbtn { color: var(--rank-link); }
+#global-card .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+#global-card .btn.primary:hover { background: #163a9e; }
+.global-join button { min-height: 44px; border-radius: 8px; }
+.global-privacy { padding: 24px; border-radius: 10px; background: var(--card2); }
+.global-privacy h3 { font-size: 14px; margin: 0 0 12px; }.global-privacy h3:not(:first-child) { margin-top: 24px; }
+.global-privacy p { display: flex; gap: 9px; font-size: 13px; line-height: 1.6; margin: 10px 0; }
+.global-privacy svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+@media (min-width: 721px) and (max-width: 1100px) { .gtable th:nth-child(3) { width: 150px; }.gtable th:last-child { width: 74px; }.global-wrap { gap: 18px; } }
+@media (max-width: 720px) { .global-wrap, .global-intro { grid-template-columns: minmax(0, 1fr); gap: 24px; }.rank-card { padding: 18px 14px; }.gtable th:first-child { width: 34px; }.gtable th:nth-child(3) { width: 94px; }.gtable th:last-child { width: 66px; }.gtable th,.gtable td { padding-inline: 4px; }.gk .multiple { font-size: 15px; }.gk .amount { font-size: 10px; }.gk .who-name { flex-wrap: wrap; gap: 3px; }.global-place .place-value { font-size: 36px; } }
+@media (forced-colors: active) { .gk .rbar span { background: CanvasText; }.gk.me { outline: 2px solid Highlight; } }
 .rank-side { flex: 1 1 250px; align-self: flex-start; display: flex; flex-direction: column; gap: 12px; background: var(--card2); border-radius: 10px; padding: 16px 18px; font-size: 13px; color: var(--ink2); }
 .rank-side .big { font-size: 40px; font-weight: 700; letter-spacing: -.03em; line-height: 1; color: var(--ink); }
 .rank-side hr { border: 0; height: 1px; background: var(--line); margin: 2px 0; width: 100%; }
@@ -377,8 +420,9 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
   </section>
 
   <section class="rank-view" id="rank-view" aria-label="랭킹" hidden>
-    <div class="card rank-card" id="global-card"><div class="empty">불러오는 중…</div></div>
-    <div class="card rank-card" id="rank-card"><div class="empty">불러오는 중…</div></div>
+    <div class="rank-tabs" id="rank-tabs" role="tablist" aria-label="랭킹 선택"></div>
+    <div class="card rank-card" id="global-card" role="tabpanel" aria-labelledby="rank-tab-global" hidden><div class="empty">불러오는 중…</div></div>
+    <div class="card rank-card" id="rank-card" role="tabpanel" hidden><div class="empty">불러오는 중…</div></div>
   </section>
 
   <div class="party" id="party" hidden role="dialog" aria-modal="true" aria-labelledby="party-t">
@@ -481,14 +525,15 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
 <script src="/d3.v7.min.js"></script>
 <script>
 let DATA = { daily: [], hours: [], prices: {} };
-const st = { range: '30', tool: 'all', unit: 'tokens', model: null, project: null, hidden: new Set(), all: false, view: 'main', rp: 'month', rk: 'week' };
+const st = { range: '30', tool: 'all', unit: 'tokens', model: null, project: null, hidden: new Set(), all: false, view: 'main', rp: 'month', rk: 'month', rankTab: null };
 try { const t = localStorage.getItem('tt-theme2'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
 
 
 // state lives in the URL hash so a filtered view can be bookmarked
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
-  if (['7', '30', '90', 'all'].includes(p.get('r'))) st.range = p.get('r');
+  if (p.get('v') === 'rank') st.rankTab = p.get('r') || null;
+  else if (['7', '30', '90', 'all'].includes(p.get('r'))) st.range = p.get('r');
   if (['tokens', 'cost'].includes(p.get('u'))) st.unit = p.get('u');
   if (['all', 'Claude Code', 'Codex', 'ChatGPT', 'Gemini CLI', 'Antigravity', 'Gemini Web'].includes(p.get('t'))) st.tool = p.get('t');
   st.model = p.get('m'); st.project = p.get('p');
@@ -498,6 +543,7 @@ function writeHash() {
   const p = new URLSearchParams(); p.set('r', st.range); p.set('u', st.unit); p.set('t', st.tool);
   if (st.model) p.set('m', st.model); if (st.project) p.set('p', st.project);
   if (st.view !== 'main') p.set('v', st.view);
+  if (st.view === 'rank') { p.delete('r'); if (st.rankTab) p.set('r', st.rankTab); }
   try { history.replaceState(null, '', '#' + p.toString()); } catch (e) {}
 }
 readHash();
@@ -874,7 +920,7 @@ $('themeBtn').onclick = () => {
   if (DATA.daily.length) projects();
   document.querySelector('meta[name="theme-color"]').content = getComputedStyle(document.body).backgroundColor;
 };
-addEventListener('hashchange', () => { readHash(); render(); });
+addEventListener('hashchange', () => { readHash(); render(); if (st.view === 'rank') loadRanking(); });
 
 function draw() { refreshToolButtons(); writeHash(); segs(); chips(); limitsView(); ratioView(); hero(); hours(); daily(); mix(); cumulative(); monthly(); models(); projects(); }
 function render() { applyView(); if (st.view !== 'main') return; if (!DATA.daily.length) { showEmpty(); return; } $('main').hidden = false; $('empty-all').hidden = true; draw(); }
@@ -1085,6 +1131,7 @@ function applyView() {
   $('ratio-card').hidden = other || $('ratio-card').hidden;
   const b = $('viewBtn');
   b.lastChild.textContent = other ? '대시보드' : '랭킹';
+  if (!rank) $('party').hidden = true;
   b.querySelector('svg').innerHTML = rank ? '<path d="M10 3 5 8l5 5"/>' : '<path d="M5 14h6M8 11v3M4.5 2h7v3.5a3.5 3.5 0 0 1-7 0zM4.5 3.5H2.5v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2"/>';
   b.setAttribute('href', other ? '#' : '#v=rank');
   document.title = settings ? '설정 · 토큰 트래커' : rank ? '랭킹 · 토큰 트래커' : '토큰 트래커';
@@ -1104,85 +1151,172 @@ async function post(path, body) {
   const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
   return r.json();
 }
-// ---------- 전체 랭킹 (opt-in, 사용량 순)
-let GRANK = null;
-const usd0 = (n) => n >= 1000 ? '$' + Math.round(n).toLocaleString() : '$' + (n || 0).toFixed(2);
-const tokS = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n || 0);
-async function loadGlobal() {
-  const card = $('global-card');
-  if (!GRANK) card.replaceChildren(el('div', 'empty', '불러오는 중…'));
+// ---------- ranking tabs (URL wins over remembered tab; no groups defaults to overall)
+let RSTATE = { server: true, groups: [], global: {} }, GRANK = null, rankRequest = 0;
+const GROUP_COUNTS = new Map();
+function chooseRankTab(state, requested, remembered) {
+  const groups = state.groups || [], valid = ['global', ...(groups.length ? ['add', ...groups.map(g => g.code)] : ['friends'])];
+  return [requested, remembered].find(tab => valid.includes(tab)) || (groups.length ? groups[0].code : 'global');
+}
+function rankTabs() {
+  if (st.rankTab === 'global') $('party').hidden = true;
+  const groups = RSTATE.groups || [], tabs = groups.length ? groups.map(g => [g.code, g.group_name || g.code,
+    `${GROUP_COUNTS.get(g.code) ?? g.member_count ?? '—'}명`]) : [['friends', '친구 그룹', null]];
+  if (groups.length) tabs.push(['add', '＋', null]);
+  tabs.push(['global', '전체', RSTATE.global?.joined ? (GRANK?.place ? `${GRANK.place}위` : '순위 없음') : '참여 전']);
+  $('rank-tabs').replaceChildren(...tabs.map(([key, name, badge]) => {
+    const b = el('button', 'rank-tab'); b.type = 'button'; b.id = 'rank-tab-' + key;
+    b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', String(key === st.rankTab));
+    b.setAttribute('aria-controls', key === 'global' ? 'global-card' : 'rank-card');
+    if (key === 'add') b.setAttribute('aria-label', '친구 그룹 추가');
+    b.append(el('span', '', name)); if (badge) b.append(el('small', '', badge));
+    b.onclick = () => { st.rankTab = key; loadRanking(); }; return b;
+  }));
+  $('global-card').hidden = st.rankTab !== 'global'; $('rank-card').hidden = st.rankTab === 'global';
+  $('rank-card').setAttribute('aria-labelledby', 'rank-tab-' + st.rankTab);
+}
+const usd0 = n => '$' + Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const tokS = n => Number(n || 0).toLocaleString('ko-KR');
+async function rankingAction(path, body, target) {
   try {
-    GRANK = await (await fetch('/api/ranking/global?period=' + st.rk, { cache: 'no-store' })).json();
-    if (GRANK.error) GRANK.error = koMessage(GRANK.error);
-  } catch (e) { GRANK = { error: '트래커에 연결할 수 없어요', state: { joined: true } }; }
-  globalView();
+    const res = await post(path, body);
+    if (res.error) throw new Error(koMessage(res.error));
+    if (res.state) RSTATE = res.state;
+    GRANK = null;
+    if (res.code) st.rankTab = res.code;
+    await loadRanking(); return true;
+  } catch (error) {
+    target.querySelector('.err')?.remove(); target.append(el('div', 'err', koMessage(error.message || '트래커에 연결할 수 없어요'))); return false;
+  }
+}
+async function loadGlobal(request = rankRequest) {
+  const period = st.rk;
+  let result;
+  try { result = await (await fetch('/api/ranking/global?period=' + period, { cache: 'no-store' })).json(); }
+  catch (e) { result = { error: '트래커에 연결할 수 없어요', state: RSTATE.global }; }
+  if (request !== rankRequest || st.rankTab !== 'global' || period !== st.rk) return;
+  GRANK = result; RSTATE.global = result.state || RSTATE.global; rankTabs(); globalView();
+}
+function rankPeriods() {
+  const seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', '랭킹 기간');
+  for (const p of ['day', 'week', 'month']) {
+    const b = el('button', '', { day: '일간', week: '주간', month: '월간' }[p]); b.type = 'button';
+    b.setAttribute('aria-pressed', String(p === st.rk)); b.onclick = () => { st.rk = p; loadRanking(); }; seg.append(b);
+  }
+  return seg;
 }
 function globalView() {
-  const card = $('global-card'), R = GRANK || {}, S = R.state || {};
-  const top = el('div', 'rank-top'); const h = el('div'); h.append(el('h2', '', '랭킹')); top.append(h);
+  const card = $('global-card'), R = GRANK || {}, S = R.state || RSTATE.global || {};
+  const top = el('div', 'rank-top'), h = el('div');
+  h.append(el('h2', '', '랭킹'), el('small', '', '구독료 대비 API 환산 사용량 · 토큰 트래커 사용자 전체')); top.append(h);
   if (!S.joined) {
-    h.append(el('small', '', '이 앱을 쓰는 모든 사람의 사용량 순위'));
-    const f = el('form', 'rank-form'); f.style.maxWidth = '420px';
-    const l = el('label', '', '랭킹에 보일 닉네임'); const i = el('input'); i.name = 'nick'; i.maxLength = 24; i.placeholder = '비워 두면 무작위 이름'; i.value = S.nick || ''; l.append(i);
+    const left = el('div'); const text = el('p');
+    text.append('구독료를 얼마나 뽑아 쓰고 있는지 다른 사용자들과 비교해 보세요. 배율은 ', el('strong', '', 'API로 썼다면 냈을 금액 ÷ 실제 구독료'), '예요.');
+    const f = el('form', 'global-join'), l = el('label', '', '랭킹에 표시할 닉네임'), i = el('input');
+    i.name = 'nick'; i.maxLength = 24; i.placeholder = '비워 두면 무작위 이름'; i.value = S.nick || ''; l.append(i);
     const b = el('button', 'btn primary', '참여하기'); b.type = 'submit'; f.append(l, b);
-    f.onsubmit = async (e) => {
-      e.preventDefault(); b.disabled = true;
-      let res; try { res = await post('/api/ranking/global/join', { nick: i.value }); } catch (err) { res = { error: '트래커에 연결할 수 없어요' }; }
-      b.disabled = false;
-      if (res.error) { const old = f.querySelector('.err'); if (old) old.remove(); f.append(el('div', 'err', koMessage(res.error))); return; }
-      GRANK = null; loadGlobal();
-    };
-    const note = el('div', 'note', '참여는 선택이에요. 공유되는 것: 닉네임, 요금제 이름, 오늘·이번 주·이번 달의 API 환산 사용량($)과 토큰 수. 대화 내용, 프로젝트, 모델, 계정 정보는 이 PC 밖으로 나가지 않아요. 언제든 그만두면 서버에서 기록이 지워져요.');
-    const err = R.error && R.error !== koMessage('Not in the public ranking') ? el('div', 'err', R.error) : null;
-    card.replaceChildren(...[top, err, f, note].filter(Boolean));
-    return;
+    f.onsubmit = async e => { e.preventDefault(); b.disabled = true; await rankingAction('/api/ranking/global/join', { nick: i.value }, f); b.disabled = false; };
+    left.append(text, f, el('div', 'note', '언제든 그만두면 서버에서 기록이 지워져요.'));
+    const privacy = el('aside', 'global-privacy');
+    for (const [title, lines, send] of [
+      ['보내는 것', ['닉네임', '구독 종류와 월 구독료', '일·주·월 API 환산 사용량, 토큰 수'], true],
+      ['보내지 않는 것', ['프롬프트·대화 내용, 프로젝트 경로', '이메일·계정 ID·로그인 토큰'], false]]) {
+      privacy.append(el('h3', '', title));
+      for (const line of lines) { const p = el('p'), icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.setAttribute('viewBox', '0 0 16 16'); icon.setAttribute('aria-hidden', 'true');
+        icon.innerHTML = `<path d="${send ? 'M3 8l3 3 7-7' : 'M4 4l8 8M12 4l-8 8'}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`;
+        p.append(icon, line); privacy.append(p); }
+    }
+    const wrap = el('div', 'global-intro'); wrap.append(left, privacy);
+    const error = R.error && R.error !== 'Not in the public ranking' ? el('div', 'err', koMessage(R.error)) : null;
+    card.replaceChildren(...[top, error, wrap].filter(Boolean)); return;
   }
-  const seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', '랭킹 기간');
-  for (const p of ['day', 'week', 'month']) { const b = el('button', '', RLABEL[p]); b.type = 'button'; b.setAttribute('aria-pressed', String(p === st.rk)); b.onclick = () => { st.rk = p; loadRanking(); }; seg.append(b); }
-  top.append(seg);
-  if (R.error) { card.replaceChildren(top, el('div', 'err', R.error)); return; }
-  h.append(el('small', '', `${R.total || 0}명 · ${RLABEL[st.rk]} 사용량(API 환산) 순`));
-  const ms = R.members || [], best = (ms[0] && ms[0].usage) || 1;
-  const list = el('div', 'rank-list');
-  const row = (m) => {
-    const r = el('div', 'gk' + (m.me ? ' me' : ''));
-    const who = el('div'); who.append(el('b', '', m.nick + (m.me ? ' (나)' : ''))); if (m.plans) who.append(el('small', '', m.plans));
-    who.style.display = 'flex'; who.style.flexDirection = 'column'; who.style.minWidth = '0';
-    const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (100 * m.usage / best) + '%'; f.style.background = m.me ? 'var(--ink)' : 'var(--muted)'; bar.append(f);
-    r.append(el('span', 'no' + (m.rank <= 3 ? ' top' : ''), String(m.rank)), who, bar, el('span', 'num', usd0(m.usage)), el('span', 'num dim', tokS(m.tokens) + ' 토큰'));
-    return r;
+  top.append(rankPeriods());
+  if (R.error) { card.replaceChildren(top, el('div', 'err', koMessage(R.error))); return; }
+  const ms = R.members || [], best = ms[0]?.ratio || 1, list = el('div', 'global-list');
+  const table = el('table', 'gtable'); table.setAttribute('aria-label', '구독료 대비 사용 배율 순위');
+  const head = el('thead'), hr = el('tr');
+  for (const label of ['순위', '닉네임 · 구독', 'API 환산 / 구독료', '배율']) { const th = el('th', '', label); th.scope = 'col'; hr.append(th); }
+  head.append(hr); const tbody = el('tbody'); table.append(head, tbody);
+  const row = m => {
+    const r = el('tr', 'gk' + (m.me ? ' me' : '')), who = el('td'), name = el('div', 'who-name');
+    name.append(el('b', '', m.nick || '이름 없음')); if (m.me) name.append(el('span', 'me-label', '나'));
+    who.append(name, el('small', '', m.plans || '구독 정보 없음'));
+    const amount = el('td'), bar = el('div', 'rbar'), fill = el('span');
+    fill.style.width = Math.max(3, Math.min(100, 100 * (m.ratio || 0) / best)) + '%'; bar.append(fill); bar.setAttribute('aria-hidden', 'true');
+    r.title = `${m.nick}: 배율 ×${Number(m.ratio || 0).toFixed(2)} · ${usd0(m.api)} / ${usd0(m.sub)} · ${tokS(m.tokens)} 토큰`;
+    amount.append(bar, el('span', 'amount', `${usd0(m.api)} / ${usd0(m.sub)}`));
+    r.append(el('td', 'no ' + ({1:'gold',2:'silver',3:'bronze'}[m.rank] || ''), String(m.rank)), who, amount,
+      el('td', 'multiple', '×' + Number(m.ratio || 0).toFixed(2))); return r;
   };
-  ms.forEach((m) => list.append(row(m)));
-  if (R.place && !ms.some((m) => m.me)) {
-    list.append(el('div', 'gk gap', '…'));
-    list.append(row({ rank: R.place, nick: R.nick || S.nick, usage: R.usage, tokens: R.tokens, me: true }));
+  ms.forEach(m => tbody.append(row(m)));
+  if (R.place && !ms.some(m => m.me)) {
+    const gap = el('tr', 'gap'), cell = el('td', '', '…'); cell.colSpan = 4; gap.append(cell); tbody.append(gap);
+    tbody.append(row({ ...R, rank: R.place, nick: R.nick || S.nick, me: true }));
   }
+  list.append(table);
   if (!ms.length) list.append(el('div', 'empty', '아직 이 기간에 기록한 사람이 없어요'));
-  const side = el('aside', 'rank-side');
-  side.append(el('div', '', `${RLABEL[st.rk]} 내 순위`));
-  const big = el('div'); big.append(el('span', 'big', R.place ? `${R.place}위` : '-'), ` / ${R.total || 0}명`); side.append(big);
-  if (R.place && R.total) side.append(el('div', '', `상위 ${Math.max(1, Math.round(100 * R.place / R.total))}%`));
-  side.append(el('div', '', `${usd0(R.usage)} · ${tokS(R.tokens)} 토큰`));
-  side.append(el('hr'));
-  const nf = el('form', 'subform'); const ni = el('input'); ni.value = S.nick || ''; ni.maxLength = 24; const nb = el('button', 'btn', '닉네임 바꾸기'); nb.type = 'submit'; nf.append(ni, nb);
-  nf.onsubmit = async (e) => { e.preventDefault(); await post('/api/ranking/global/nick', { nick: ni.value }); loadGlobal(); };
-  const lv = el('button', 'btn', '랭킹 참여 그만두기'); lv.type = 'button';
-  lv.onclick = async () => { if (lv.dataset.sure) { await post('/api/ranking/global/leave'); GRANK = null; loadGlobal(); } else { lv.dataset.sure = '1'; lv.textContent = '한 번 더 누르면 기록이 지워져요'; } };
-  side.append(nf, lv);
-  const wrap = el('div', 'rank-wrap'); wrap.append(list, side);
-  card.replaceChildren(top, wrap);
+  list.append(el('div', 'note', '상위 100명까지 표시'));
+  const side = el('aside', 'global-side'), place = el('div', 'global-place');
+  place.append(el('div', '', `내 순위 · ${PLABEL[st.rk]}`));
+  const big = el('div', 'place-value'); big.append(R.place ? `${tokS(R.place)}위` : '—', el('small', '', ` / ${tokS(R.total)}명`)); place.append(big);
+  if (R.place && R.total) place.append(el('div', '', `상위 ${(100 * R.place / R.total).toFixed(1)}%`));
+  else place.append(el('div', '', R.no_sub ? '구독료를 설정하면 순위에 들어가요' : '사용 기록이 쌓이면 순위에 들어가요'));
+  side.append(place);
+  if (R.no_sub) { const settings = el('button', 'btn', '요금제 확인'); settings.type = 'button'; settings.onclick = openSettings; side.append(settings); }
+  const metrics = el('dl', 'global-metrics');
+  for (const [name, value] of [['배율', R.ratio == null ? '—' : '×' + Number(R.ratio).toFixed(2)], ['API 환산 사용량', usd0(R.api)], ['구독료 합계', usd0(R.sub)], ['토큰', tokS(R.tokens)]]) {
+    const pair = el('div'); pair.append(el('dt', '', name), el('dd', '', value)); metrics.append(pair);
+  }
+  side.append(metrics);
+  const nf = el('form', 'nickf'), label = el('label', '', '닉네임'), ni = el('input'); ni.name = 'nick'; ni.value = S.nick || ''; ni.maxLength = 24; label.append(ni);
+  const nb = el('button', 'btn', '변경'); nb.type = 'submit'; nf.append(label, nb);
+  nf.onsubmit = async e => { e.preventDefault(); nb.disabled = true; await rankingAction('/api/ranking/global/nick', { nick: ni.value }, nf); nb.disabled = false; };
+  side.append(nf, el('div', 'note', '대화 내용·경로·계정 정보는 보내지 않아요.'));
+  const lv = el('button', 'linkbtn', '참여 그만두기'); lv.type = 'button';
+  lv.onclick = async () => {
+    if (!lv.dataset.sure) { lv.dataset.sure = '1'; lv.textContent = '한 번 더 누르면 기록이 지워져요'; return; }
+    lv.disabled = true; await rankingAction('/api/ranking/global/leave', {}, side); lv.disabled = false;
+  };
+  side.append(lv); const wrap = el('div', 'global-wrap'); wrap.append(list, side); card.replaceChildren(top, wrap);
 }
 async function loadRanking() {
-  // the public ranking stays hidden until it is released (config: "public_ranking": true)
-  $('global-card').style.display = SOURCE_SETTINGS.public_ranking ? '' : 'none';
-  if (SOURCE_SETTINGS.public_ranking) loadGlobal();
+  const request = ++rankRequest;
+  let state;
+  try { const response = await fetch('/api/ranking/state', { cache: 'no-store' }); if (!response.ok) throw new Error(); state = await response.json(); }
+  catch (e) { if (request !== rankRequest) return; $('global-card').hidden = true; $('rank-card').hidden = false;
+    $('rank-card').replaceChildren(el('div', 'err', '트래커에 연결할 수 없어요')); return; }
+  if (request !== rankRequest || st.view !== 'rank') return;
+  RSTATE = state; let remembered = null;
+  try { remembered = localStorage.getItem('tt-rank-tab'); } catch (e) {}
+  st.rankTab = chooseRankTab(state, st.rankTab, remembered);
+  try { localStorage.setItem('tt-rank-tab', st.rankTab); } catch (e) {}
+  writeHash(); rankTabs();
+  // Each membership is independent; read the others for accurate tab badges too.
+  for (const group of state.groups || []) {
+    if (group.code === st.rankTab) continue;
+    fetch('/api/ranking?code=' + encodeURIComponent(group.code) + '&period=' + st.rk, { cache: 'no-store' })
+      .then(r => r.json()).then(result => { if (request !== rankRequest) return;
+        if (result.members) { GROUP_COUNTS.set(group.code, result.members.length); rankTabs(); } }).catch(() => {});
+  }
+  if (st.rankTab !== 'global' && state.global?.joined) {
+    fetch('/api/ranking/global?period=' + st.rk, { cache: 'no-store' }).then(r => r.json()).then(result => {
+      if (request !== rankRequest) return; GRANK = result; rankTabs();
+    }).catch(() => {});
+  }
+  if (st.rankTab === 'global') return loadGlobal(request);
   const card = $('rank-card');
-  if (!RANK) card.replaceChildren(el('div', 'empty', '불러오는 중…'));
-  try {
-    const r = await fetch('/api/ranking?period=' + st.rk, { cache: 'no-store' });
-    RANK = await r.json(); if (RANK.error) RANK.error = koMessage(RANK.error);
-  } catch (e) { RANK = { error: '트래커에 연결할 수 없어요', state: { server: true, joined: true } }; }
-  rankView();
+  if (['friends', 'add'].includes(st.rankTab)) return joinView(card);
+  const code = st.rankTab, period = st.rk, group = state.groups.find(g => g.code === code);
+  card.replaceChildren(el('div', 'empty', '불러오는 중…'));
+  let result;
+  try { result = await (await fetch('/api/ranking?code=' + encodeURIComponent(code) + '&period=' + period, { cache: 'no-store' })).json(); }
+  catch (e) { result = { error: '트래커에 연결할 수 없어요' }; }
+  if (request !== rankRequest || st.rankTab !== code || st.rk !== period) return;
+  RANK = { ...result, state: { ...group, server: state.server } };
+  if (RANK.error) RANK.error = koMessage(RANK.error);
+  if (result.members) GROUP_COUNTS.set(code, result.members.length);
+  rankTabs(); rankView();
 }
 function rankView() {
   const card = $('rank-card'), R = RANK || {}, S = R.state || {};
@@ -1237,11 +1371,14 @@ function rankView() {
   const nf = el('form', 'nickf');
   const nl = el('label', '', '닉네임'); const ni = el('input'); ni.name = 'nick'; ni.maxLength = 24; ni.value = S.nick || ''; nl.append(ni);
   const ns = el('button', 'btn', '닉네임 바꾸기'); ns.type = 'submit'; nf.append(nl, ns);
-  nf.onsubmit = async (e) => { e.preventDefault(); await post('/api/ranking/nick', { nick: ni.value }); loadRanking(); };
+  nf.onsubmit = async e => { e.preventDefault(); ns.disabled = true; await rankingAction('/api/ranking/nick', { code: S.code, nick: ni.value }, nf); ns.disabled = false; };
   side.append(nf, el('hr'));
   side.append(el('b', '', '랭킹에 공유되는 것'), el('div', '', '닉네임, 요금제 이름, 기간별 API 환산 금액과 구독료 몫'), el('div', 'note', '대화 내용, 프로젝트, 모델별 기록은 공유하지 않아요.'));
-  const lv = el('button', 'linkbtn', '그룹 나가기'); lv.type = 'button';
-  lv.onclick = async () => { if (lv.dataset.sure) { await post('/api/ranking/leave'); RANK = null; loadRanking(); } else { lv.dataset.sure = '1'; lv.textContent = '정말 나갈까요? 한 번 더 누르면 나가요'; } };
+  const lv = el('button', 'linkbtn', '이 그룹 나가기'); lv.type = 'button';
+  lv.onclick = async () => {
+    if (!lv.dataset.sure) { lv.dataset.sure = '1'; lv.textContent = '정말 나갈까요? 한 번 더 누르면 나가요'; return; }
+    lv.disabled = true; await rankingAction('/api/ranking/leave', { code: S.code }, side); lv.disabled = false;
+  };
   side.append(lv);
   const wrap = el('div', 'rank-wrap'); wrap.append(list, side);
   const lg = el('div', 'legend2'); for (const [n, c, t] of [['쌀숭이', 't-king', '×5 이상'], ['쌀먹', 't-eat', '×2 이상'], ['본전', 't-even', '×1 이상'], ['기부천사', 't-give', '×1 미만']]) { const sp = el('span'); sp.append(el('span', 'tier ' + c, n), ' ' + t); lg.append(sp); }
@@ -1260,7 +1397,7 @@ function joinView(card, error) {
       let res; try { res = await post(path, body); } catch (err) { res = { error: '트래커에 연결할 수 없어요' }; }
       b.disabled = false;
       if (res.error) { const old = f.querySelector('.err'); if (old) old.remove(); f.append(el('div', 'err', koMessage(res.error))); return; }
-      RANK = null; loadRanking();
+      RANK = null; RSTATE = res.state || RSTATE; st.rankTab = res.code || body.code?.trim().toUpperCase() || null; loadRanking();
     };
     return f;
   };
