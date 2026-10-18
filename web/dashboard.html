@@ -156,6 +156,17 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
   .rrow { grid-template-columns: minmax(0, 1fr) 6.5rem 3.6rem; gap: 10px; }
   .rrow .rbar, .rrow.rh span:nth-child(2) { display: none; }
 }
+.gk { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) minmax(0, 1.2fr) 6.5rem 5.5rem; gap: 14px; align-items: center; min-height: 44px; padding: 0 12px; margin: 0 -12px; border-radius: 8px; }
+.gk.me { background: var(--card2); }
+.gk .no { font-size: 15px; font-weight: 700; color: var(--muted); text-align: center; }
+.gk .no.top { color: var(--ink); font-size: 18px; }
+.gk b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gk small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gk .rbar { height: 8px; }
+.gk .num { text-align: right; font-size: 13.5px; white-space: nowrap; }
+.gk .num.dim { color: var(--muted); }
+.gk.gap { min-height: 22px; color: var(--muted); }
+@media (max-width: 720px) { .gk { grid-template-columns: 2rem minmax(0, 1fr) 5rem; } .gk .rbar, .gk .num.dim { display: none; } }
 .rank-side { flex: 1 1 250px; align-self: flex-start; display: flex; flex-direction: column; gap: 12px; background: var(--card2); border-radius: 10px; padding: 16px 18px; font-size: 13px; color: var(--ink2); }
 .rank-side .big { font-size: 40px; font-weight: 700; letter-spacing: -.03em; line-height: 1; color: var(--ink); }
 .rank-side hr { border: 0; height: 1px; background: var(--line); margin: 2px 0; width: 100%; }
@@ -365,7 +376,8 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
     </div>
   </section>
 
-  <section class="rank-view" id="rank-view" aria-label="쌀숭이 랭킹" hidden>
+  <section class="rank-view" id="rank-view" aria-label="랭킹" hidden>
+    <div class="card rank-card" id="global-card"><div class="empty">불러오는 중…</div></div>
     <div class="card rank-card" id="rank-card"><div class="empty">불러오는 중…</div></div>
   </section>
 
@@ -880,7 +892,7 @@ function resetTxt(ts) {
   const t = new Date(ts * 1000);
   return ts - Date.now() / 1000 >= 86400 ? `${untilTxt(ts)} 후 리셋 · ${t.getMonth() + 1}/${t.getDate()}(${dayName(t)})` : `${untilTxt(ts)} 후 리셋`;
 }
-const KO_MESSAGES = {"Model quota": "모델 한도", "Sign in with Google in Gemini CLI": "Gemini CLI에서 Google 로그인을 해주세요", "Run Gemini CLI to refresh your login": "Gemini CLI를 실행해 로그인 토큰을 갱신해주세요", "No quota information in the server response": "서버 응답에 한도 정보가 없습니다", "Model limits are reported by the app. Token usage is available only when the app records token counts.": "모델별 한도는 앱 조회값입니다. 앱에서 토큰 수를 제공하지 않는 대화의 토큰 사용량은 집계할 수 없습니다", "No model quotas in the app response": "앱 응답에 모델 한도 정보가 없습니다", "Start Antigravity to read model quotas. Usage requires token counts in app logs.": "Antigravity를 실행하면 모델별 한도를 조회합니다. 토큰 사용량은 앱 로그에 제공될 때만 집계합니다", "Could not fetch quotas. Check app login and running status.": "한도 조회 실패. 앱 로그인·실행 상태를 확인해주세요", "Web token usage and model quotas cannot be fetched automatically. CLI usage is separate.": "웹 대화의 토큰 사용량·모델별 잔여 한도는 자동 조회할 수 없습니다. CLI 사용량과 별개입니다", "Could not fetch limits for this app": "이 도구의 한도 조회에 실패했습니다", "Update check failed. Check your internet connection.": "업데이트 확인 실패. 인터넷 연결을 확인해주세요", "No ranking server configured": "랭킹 서버가 아직 설정되지 않았어요", "Invite code not found": "그런 초대 코드가 없어요", "Group is full (50 members maximum)": "그룹이 가득 찼어요 (최대 50명)", "Membership expired. Join the group again.": "그룹에서 나가졌어요. 다시 참가해 주세요", "Server error": "서버 오류", "Could not connect to the public ranking server. Update Token Tracker and check your connection.": "랭킹 서버에 연결할 수 없어요", "You have not joined a group yet": "아직 그룹에 참가하지 않았어요", "User-": "쌀숭이-", "Claude Code login credentials were not found": "Claude Code 로그인 정보(.credentials.json)를 찾지 못했어요", "No OAuth token (API key login?)": "OAuth 토큰이 없어요 (API 키 로그인?)", "Sign in again with /login in Claude Code": "로그인이 풀렸어요. Claude Code에서 /login 을 한 번 해 주세요", "Token refresh failed (check your connection)": "토큰 갱신 실패 (인터넷 연결 확인)", "Login expired. Run Claude Code to refresh it.": "로그인 토큰 만료. Claude Code를 한 번 실행하면 갱신돼요", "Rate limited (showing cached values)": "조회가 너무 잦아 잠시 쉬는 중 (마지막 값 표시)", "Authentication failed. Sign in to Claude Code again.": "인증 실패 — Claude Code 재로그인 필요", "Connection failed:": "연결 실패:", "Reset": "리셋됨", "No quota information in Codex logs yet": "Codex 로그에 한도 정보가 아직 없어요", "Last Codex usage ({h}h ago)": "마지막 Codex 사용 기준 ({h}시간 전)", "Last Codex usage ({h // 24}d ago)": "마지막 Codex 사용 기준 ({h // 24}일 전)", "Weekly Opus": "주간 Opus", "Weekly Sonnet": "주간 Sonnet", "Weekly Apps": "주간 앱", "5h": "5시간", "Weekly": "주간", "Limit": "한도", "{m // 1440}d": "{m // 1440}일", "{round(m / 60)}h": "{round(m / 60)}시간"};
+const KO_MESSAGES = {"Model quota": "모델 한도", "Sign in with Google in Gemini CLI": "Gemini CLI에서 Google 로그인을 해주세요", "Run Gemini CLI to refresh your login": "Gemini CLI를 실행해 로그인 토큰을 갱신해주세요", "No quota information in the server response": "서버 응답에 한도 정보가 없습니다", "Model limits are reported by the app. Token usage is available only when the app records token counts.": "모델별 한도는 앱 조회값입니다. 앱에서 토큰 수를 제공하지 않는 대화의 토큰 사용량은 집계할 수 없습니다", "No model quotas in the app response": "앱 응답에 모델 한도 정보가 없습니다", "Start Antigravity to read model quotas. Usage requires token counts in app logs.": "Antigravity를 실행하면 모델별 한도를 조회합니다. 토큰 사용량은 앱 로그에 제공될 때만 집계합니다", "Could not fetch quotas. Check app login and running status.": "한도 조회 실패. 앱 로그인·실행 상태를 확인해주세요", "Web token usage and model quotas cannot be fetched automatically. CLI usage is separate.": "웹 대화의 토큰 사용량·모델별 잔여 한도는 자동 조회할 수 없습니다. CLI 사용량과 별개입니다", "Could not fetch limits for this app": "이 도구의 한도 조회에 실패했습니다", "Update check failed. Check your internet connection.": "업데이트 확인 실패. 인터넷 연결을 확인해주세요", "No ranking server configured": "랭킹 서버가 아직 설정되지 않았어요", "Invite code not found": "그런 초대 코드가 없어요", "Group is full (50 members maximum)": "그룹이 가득 찼어요 (최대 50명)", "Membership expired. Join the group again.": "그룹에서 나가졌어요. 다시 참가해 주세요", "Server error": "서버 오류", "Not in the public ranking": "아직 랭킹에 참여하지 않았어요", "The ranking server needs an update": "랭킹 서버가 아직 업데이트되지 않았어요. 잠시 후 다시 시도해 주세요", "Could not connect to the public ranking server. Update Token Tracker and check your connection.": "랭킹 서버에 연결할 수 없어요", "You have not joined a group yet": "아직 그룹에 참가하지 않았어요", "User-": "쌀숭이-", "Claude Code login credentials were not found": "Claude Code 로그인 정보(.credentials.json)를 찾지 못했어요", "No OAuth token (API key login?)": "OAuth 토큰이 없어요 (API 키 로그인?)", "Sign in again with /login in Claude Code": "로그인이 풀렸어요. Claude Code에서 /login 을 한 번 해 주세요", "Token refresh failed (check your connection)": "토큰 갱신 실패 (인터넷 연결 확인)", "Login expired. Run Claude Code to refresh it.": "로그인 토큰 만료. Claude Code를 한 번 실행하면 갱신돼요", "Rate limited (showing cached values)": "조회가 너무 잦아 잠시 쉬는 중 (마지막 값 표시)", "Authentication failed. Sign in to Claude Code again.": "인증 실패 — Claude Code 재로그인 필요", "Connection failed:": "연결 실패:", "Reset": "리셋됨", "No quota information in Codex logs yet": "Codex 로그에 한도 정보가 아직 없어요", "Last Codex usage ({h}h ago)": "마지막 Codex 사용 기준 ({h}시간 전)", "Last Codex usage ({h // 24}d ago)": "마지막 Codex 사용 기준 ({h // 24}일 전)", "Weekly Opus": "주간 Opus", "Weekly Sonnet": "주간 Sonnet", "Weekly Apps": "주간 앱", "5h": "5시간", "Weekly": "주간", "Limit": "한도", "{m // 1440}d": "{m // 1440}일", "{round(m / 60)}h": "{round(m / 60)}시간"};
 const koMessage = text => KO_MESSAGES[text] || String(text).replace(/Last Codex usage \((\d+)h ago\)/,'마지막 Codex 사용 기준 ($1시간 전)').replace(/Last Codex usage \((\d+)d ago\)/,'마지막 Codex 사용 기준 ($1일 전)');
 let LIMITS = {};
 let SOURCE_SETTINGS = {sources: {}, source_names: {claude:'Claude Code',codex:'Codex',chatgpt:'ChatGPT',gemini:'Gemini CLI',antigravity:'Antigravity',gemini_web:'Gemini Web'}};
@@ -1075,7 +1087,7 @@ function applyView() {
   b.lastChild.textContent = other ? '대시보드' : '랭킹';
   b.querySelector('svg').innerHTML = rank ? '<path d="M10 3 5 8l5 5"/>' : '<path d="M5 14h6M8 11v3M4.5 2h7v3.5a3.5 3.5 0 0 1-7 0zM4.5 3.5H2.5v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2"/>';
   b.setAttribute('href', other ? '#' : '#v=rank');
-  document.title = settings ? '설정 · 토큰 트래커' : rank ? '쌀숭이 랭킹 · 토큰 트래커' : '토큰 트래커';
+  document.title = settings ? '설정 · 토큰 트래커' : rank ? '랭킹 · 토큰 트래커' : '토큰 트래커';
 }
 $('viewBtn').onclick = (e) => {
   e.preventDefault(); st.view = st.view !== 'main' ? 'main' : 'rank'; writeHash(); render();
@@ -1092,7 +1104,76 @@ async function post(path, body) {
   const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
   return r.json();
 }
+// ---------- 전체 랭킹 (opt-in, 사용량 순)
+let GRANK = null;
+const usd0 = (n) => n >= 1000 ? '$' + Math.round(n).toLocaleString() : '$' + (n || 0).toFixed(2);
+const tokS = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n || 0);
+async function loadGlobal() {
+  const card = $('global-card');
+  if (!GRANK) card.replaceChildren(el('div', 'empty', '불러오는 중…'));
+  try {
+    GRANK = await (await fetch('/api/ranking/global?period=' + st.rk, { cache: 'no-store' })).json();
+    if (GRANK.error) GRANK.error = koMessage(GRANK.error);
+  } catch (e) { GRANK = { error: '트래커에 연결할 수 없어요', state: { joined: true } }; }
+  globalView();
+}
+function globalView() {
+  const card = $('global-card'), R = GRANK || {}, S = R.state || {};
+  const top = el('div', 'rank-top'); const h = el('div'); h.append(el('h2', '', '랭킹')); top.append(h);
+  if (!S.joined) {
+    h.append(el('small', '', '이 앱을 쓰는 모든 사람의 사용량 순위'));
+    const f = el('form', 'rank-form'); f.style.maxWidth = '420px';
+    const l = el('label', '', '랭킹에 보일 닉네임'); const i = el('input'); i.name = 'nick'; i.maxLength = 24; i.placeholder = '비워 두면 무작위 이름'; i.value = S.nick || ''; l.append(i);
+    const b = el('button', 'btn primary', '참여하기'); b.type = 'submit'; f.append(l, b);
+    f.onsubmit = async (e) => {
+      e.preventDefault(); b.disabled = true;
+      let res; try { res = await post('/api/ranking/global/join', { nick: i.value }); } catch (err) { res = { error: '트래커에 연결할 수 없어요' }; }
+      b.disabled = false;
+      if (res.error) { const old = f.querySelector('.err'); if (old) old.remove(); f.append(el('div', 'err', koMessage(res.error))); return; }
+      GRANK = null; loadGlobal();
+    };
+    const note = el('div', 'note', '참여는 선택이에요. 공유되는 것: 닉네임, 요금제 이름, 오늘·이번 주·이번 달의 API 환산 사용량($)과 토큰 수. 대화 내용, 프로젝트, 모델, 계정 정보는 이 PC 밖으로 나가지 않아요. 언제든 그만두면 서버에서 기록이 지워져요.');
+    const err = R.error && R.error !== koMessage('Not in the public ranking') ? el('div', 'err', R.error) : null;
+    card.replaceChildren(...[top, err, f, note].filter(Boolean));
+    return;
+  }
+  const seg = el('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', '랭킹 기간');
+  for (const p of ['day', 'week', 'month']) { const b = el('button', '', RLABEL[p]); b.type = 'button'; b.setAttribute('aria-pressed', String(p === st.rk)); b.onclick = () => { st.rk = p; loadRanking(); }; seg.append(b); }
+  top.append(seg);
+  if (R.error) { card.replaceChildren(top, el('div', 'err', R.error)); return; }
+  h.append(el('small', '', `${R.total || 0}명 · ${RLABEL[st.rk]} 사용량(API 환산) 순`));
+  const ms = R.members || [], best = (ms[0] && ms[0].usage) || 1;
+  const list = el('div', 'rank-list');
+  const row = (m) => {
+    const r = el('div', 'gk' + (m.me ? ' me' : ''));
+    const who = el('div'); who.append(el('b', '', m.nick + (m.me ? ' (나)' : ''))); if (m.plans) who.append(el('small', '', m.plans));
+    who.style.display = 'flex'; who.style.flexDirection = 'column'; who.style.minWidth = '0';
+    const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (100 * m.usage / best) + '%'; f.style.background = m.me ? 'var(--ink)' : 'var(--muted)'; bar.append(f);
+    r.append(el('span', 'no' + (m.rank <= 3 ? ' top' : ''), String(m.rank)), who, bar, el('span', 'num', usd0(m.usage)), el('span', 'num dim', tokS(m.tokens) + ' 토큰'));
+    return r;
+  };
+  ms.forEach((m) => list.append(row(m)));
+  if (R.place && !ms.some((m) => m.me)) {
+    list.append(el('div', 'gk gap', '…'));
+    list.append(row({ rank: R.place, nick: R.nick || S.nick, usage: R.usage, tokens: R.tokens, me: true }));
+  }
+  if (!ms.length) list.append(el('div', 'empty', '아직 이 기간에 기록한 사람이 없어요'));
+  const side = el('aside', 'rank-side');
+  side.append(el('div', '', `${RLABEL[st.rk]} 내 순위`));
+  const big = el('div'); big.append(el('span', 'big', R.place ? `${R.place}위` : '-'), ` / ${R.total || 0}명`); side.append(big);
+  if (R.place && R.total) side.append(el('div', '', `상위 ${Math.max(1, Math.round(100 * R.place / R.total))}%`));
+  side.append(el('div', '', `${usd0(R.usage)} · ${tokS(R.tokens)} 토큰`));
+  side.append(el('hr'));
+  const nf = el('form', 'subform'); const ni = el('input'); ni.value = S.nick || ''; ni.maxLength = 24; const nb = el('button', 'btn', '닉네임 바꾸기'); nb.type = 'submit'; nf.append(ni, nb);
+  nf.onsubmit = async (e) => { e.preventDefault(); await post('/api/ranking/global/nick', { nick: ni.value }); loadGlobal(); };
+  const lv = el('button', 'btn', '랭킹 참여 그만두기'); lv.type = 'button';
+  lv.onclick = async () => { if (lv.dataset.sure) { await post('/api/ranking/global/leave'); GRANK = null; loadGlobal(); } else { lv.dataset.sure = '1'; lv.textContent = '한 번 더 누르면 기록이 지워져요'; } };
+  side.append(nf, lv);
+  const wrap = el('div', 'rank-wrap'); wrap.append(list, side);
+  card.replaceChildren(top, wrap);
+}
 async function loadRanking() {
+  loadGlobal();
   const card = $('rank-card');
   if (!RANK) card.replaceChildren(el('div', 'empty', '불러오는 중…'));
   try {

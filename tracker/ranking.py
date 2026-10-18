@@ -9,7 +9,9 @@ subscription_usd_month override, otherwise the detected plan's list price.
 Free and unknown selected plans never fall back to a detected paid plan.
 
 The ranking server (server/worker.js) receives nickname, plan names and, per period,
-the window plus two dollar amounts. Nothing else leaves the PC.
+the window, three dollar amounts (API-equivalent spend counted in the ratio, the
+subscription share, API-equivalent spend of every tool) and the token total. Nothing else
+leaves the PC. Groups rank by ratio; the opt-in public ranking ranks by usage.
 """
 import json
 import hashlib
@@ -246,7 +248,8 @@ def _call(method, path, body=None, token=None, cfg=None):
         except (ValueError, OSError):
             msg = None
         raise RankingError({"group not found": "Invite code not found", "group is full": "Group is full (50 members maximum)",
-                            "bad token": "Membership expired. Join the group again."}.get(msg, msg or f"Server error {e.code}"))
+                            "bad token": "Membership expired. Join the group again.",
+                            "not found": "The ranking server needs an update"}.get(msg, msg or f"Server error {e.code}"))
     except (urllib.error.URLError, TimeoutError, OSError):
         raise RankingError("Could not connect to the public ranking server. Update Token Tracker and check your connection.")
 
@@ -298,24 +301,100 @@ _lock = threading.Lock()
 _last_sync = {"t": 0.0}
 
 
+def _period_tokens(db):
+    """Tokens of every tool since the start of today, this week and this month (local calendar)."""
+    out = {}
+    for period, (_, start, _) in windows().items():
+        ts = datetime.combine(start, datetime.min.time()).timestamp()
+        row = db.query("SELECT SUM(input + output + cache_write + cache_read) AS n FROM records WHERE ts >= ?", (ts,))
+        out[period] = int((row[0]["n"] if row else 0) or 0)
+    return out
+
+
+def _score_body(db, limits, cfg, nick):
+    rep = report(db, limits, cfg)
+    plans = " · ".join(f"{NAMES[t.get('source',s)]} {t['plan']}" if t.get("plan") else NAMES[t.get('source',s)]
+                       for s, t in rep["periods"]["month"]["tools"].items() if t["sub"])
+    tokens = _period_tokens(db)
+    # usage = API-equivalent spend of every tool, even ones without a known subscription price
+    return {"nick": nick or "", "plans": plans, 'calculation_version': 2,
+            "periods": {p: {"window": v["window"], "api": round(v["api"], 4), "sub": round(v["sub"], 4),
+                            "usage": round(sum(t["api"] for t in v["tools"].values()), 4),
+                            "tokens": tokens.get(p, 0)}
+                        for p, v in rep["periods"].items()}}
+
+
 def sync(db, limits, force=False):
-    """Send this PC's numbers to the group. Quiet no-op when not joined or synced recently."""
+    """Send this PC's numbers to the group and/or the public ranking. Quiet no-op when not joined
+    or synced recently."""
     cfg = paths.load_config()
     r = cfg.get("ranking") or {}
-    if not (r.get("code") and r.get("token") and server_url(cfg)):
+    g = cfg.get("ranking_global") or {}
+    in_group = bool(r.get("code") and r.get("token"))
+    in_global = bool(g.get("token"))
+    if not ((in_group or in_global) and server_url(cfg)):
         return False
     with _lock:
         if not force and time.time() - _last_sync["t"] < SYNC_EVERY:
             return False
-        rep = report(db, limits, cfg)
-        plans = " · ".join(f"{NAMES[t.get('source',s)]} {t['plan']}" if t.get("plan") else NAMES[t.get('source',s)]
-                           for s, t in rep["periods"]["month"]["tools"].items() if t["sub"])
-        body = {"nick": r.get("nick") or "", "plans": plans, 'calculation_version': 2,
-                "periods": {p: {"window": v["window"], "api": round(v["api"], 4), "sub": round(v["sub"], 4)}
-                            for p, v in rep["periods"].items()}}
-        _call("PUT", f"/v1/groups/{r['code']}/score", body, token=r["token"], cfg=cfg)
+        if in_group:
+            _call("PUT", f"/v1/groups/{r['code']}/score", _score_body(db, limits, cfg, r.get("nick")),
+                  token=r["token"], cfg=cfg)
+        if in_global:
+            _call("PUT", "/v1/global/score", _score_body(db, limits, cfg, g.get("nick")), token=g["token"], cfg=cfg)
         _last_sync["t"] = time.time()
         return True
+
+
+# ------------------------------------------------------------------ public ranking
+def global_state(cfg=None):
+    cfg = cfg or paths.load_config()
+    g = cfg.get("ranking_global") or {}
+    return {"joined": bool(g.get("token")), "nick": g.get("nick") or (cfg.get("ranking") or {}).get("nick") or ""}
+
+
+def global_join(nick):
+    res = _call("POST", "/v1/global/join", {"nick": nick})
+    cfg = paths.load_config()
+    cfg["ranking_global"] = {"member_id": res["member_id"], "token": res["token"], "nick": nick}
+    paths.save_config(cfg)
+    _last_sync["t"] = 0.0
+    return res
+
+
+def global_leave():
+    cfg = paths.load_config()
+    g = cfg.get("ranking_global") or {}
+    if g.get("token"):
+        try:
+            _call("DELETE", "/v1/global/me", token=g["token"], cfg=cfg)  # removes the scores too
+        except RankingError:
+            pass
+    cfg["ranking_global"] = {}
+    paths.save_config(cfg)
+
+
+def global_set_nick(nick):
+    cfg = paths.load_config()
+    cfg.setdefault("ranking_global", {})["nick"] = nick
+    paths.save_config(cfg)
+    _last_sync["t"] = 0.0
+
+
+def global_ranking(db, limits, period):
+    cfg = paths.load_config()
+    g = cfg.get("ranking_global") or {}
+    if not g.get("token"):
+        raise RankingError("Not in the public ranking")
+    try:
+        sync(db, limits, force=time.time() - _last_sync["t"] > 120)
+    except RankingError:
+        pass
+    period = period if period in PERIODS else "week"
+    win = windows()[period][0]
+    res = _call("GET", f"/v1/global/ranking?period={period}&window={win}", token=g["token"], cfg=cfg)
+    res["nick"] = g.get("nick")
+    return res
 
 
 def ranking(db, limits, period):

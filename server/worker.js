@@ -8,10 +8,18 @@
 //   PUT    /v1/groups/:code/score         {nick, plans, periods}      (Bearer token)
 //   GET    /v1/groups/:code/ranking?period=day|week|month&window=...  (Bearer token)
 //   DELETE /v1/groups/:code/me                                         (Bearer token)
+//
+// Public ranking (opt-in, everyone who turns it on, ordered by usage):
+//   POST   /v1/global/join                {nick}                      -> {member_id, token}
+//   PUT    /v1/global/score               same body as a group score  (Bearer token)
+//   GET    /v1/global/ranking?period=...&window=...  -> top 100, your place, participant count
+//   DELETE /v1/global/me                                               (Bearer token)
 
 const PERIODS = ['day', 'week', 'month'];
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 const MAX_MEMBERS = 50;
+const GLOBAL = 'GLOBAL';   // the public ranking's built-in group (no member limit)
+const TOP = 100;
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -52,6 +60,7 @@ function cleanText(v, max) {
   return v.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max);
 }
 const cleanNum = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e6 ? v : null);
+const cleanCount = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e15 ? v : null);
 const cleanWindow = (v) => (typeof v === 'string' && /^\d{4}-(W\d{2}|\d{2}(-\d{2})?)$/.test(v) ? v : null);
 
 async function readJson(req) {
@@ -74,7 +83,7 @@ async function auth(req, env, code) {
 
 async function join(env, code, nick) {
   const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM members WHERE group_code = ?').bind(code).first('n');
-  if (count >= MAX_MEMBERS) return null;
+  if (code !== GLOBAL && count >= MAX_MEMBERS) return null;
   const id = newId();
   const token = newToken();
   const now = Date.now();
@@ -109,9 +118,12 @@ export default {
       return json({ code, name, ...m }, 201);
     }
 
-    if (parts[1] !== 'groups' || parts.length !== 4) return err(404, 'not found');
-    const code = cleanText(parts[2], 9).toUpperCase();
-    const action = parts[3];
+    const isGlobal = parts[1] === 'global' && parts.length === 3;
+    if (!isGlobal && (parts[1] !== 'groups' || parts.length !== 4)) return err(404, 'not found');
+    const code = isGlobal ? GLOBAL : cleanText(parts[2], 9).toUpperCase();
+    const action = isGlobal ? parts[2] : parts[3];
+    if (!isGlobal && code === GLOBAL) return err(404, 'group not found');  // only through /v1/global
+    if (isGlobal) await env.DB.prepare("INSERT OR IGNORE INTO groups (code, name, created) VALUES (?, 'Ranking', 0)").bind(GLOBAL).run();
     const group = await env.DB.prepare('SELECT * FROM groups WHERE code = ?').bind(code).first();
     if (!group) return err(404, 'group not found');
 
@@ -140,13 +152,43 @@ export default {
         if (!s) continue;
         const api = cleanNum(s.api), sub = cleanNum(s.sub), win = cleanWindow(s.window);
         if (api === null || sub === null || !win) return err(400, `bad ${p}`);
+        const usage = s.usage === undefined ? api : cleanNum(s.usage);
+        const tokens = s.tokens === undefined ? 0 : cleanCount(s.tokens);
+        if (usage === null || tokens === null) return err(400, `bad ${p}`);
         stmts.push(env.DB.prepare(
-          'INSERT INTO scores (member_id, period, window, api, sub, updated, calculation_version) VALUES (?, ?, ?, ?, ?, ?, ?) ' +
-          'ON CONFLICT(member_id, period) DO UPDATE SET window = excluded.window, api = excluded.api, sub = excluded.sub, updated = excluded.updated, calculation_version = excluded.calculation_version',
-        ).bind(me.id, p, win, api, sub, now, calculationVersion));
+          'INSERT INTO scores (member_id, period, window, api, sub, updated, calculation_version, usage, tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ' +
+          'ON CONFLICT(member_id, period) DO UPDATE SET window = excluded.window, api = excluded.api, sub = excluded.sub, updated = excluded.updated, ' +
+          'calculation_version = excluded.calculation_version, usage = excluded.usage, tokens = excluded.tokens',
+        ).bind(me.id, p, win, api, sub, now, calculationVersion, usage, Math.round(tokens)));
       }
       await env.DB.batch(stmts);
       return json({ ok: true });
+    }
+
+    if (isGlobal && req.method === 'GET' && action === 'ranking') {
+      const period = PERIODS.includes(url.searchParams.get('period')) ? url.searchParams.get('period') : 'week';
+      const win = cleanWindow(url.searchParams.get('window'));
+      if (!win) return err(400, 'window required');
+      // everyone in the same calendar window, by usage; nicknames only
+      const { results } = await env.DB.prepare(
+        'SELECT m.id, m.nick, m.plans, s.usage, s.tokens FROM scores s JOIN members m ON m.id = s.member_id ' +
+        'WHERE m.group_code = ? AND s.period = ? AND s.window = ? AND s.usage > 0 ORDER BY s.usage DESC LIMIT ?',
+      ).bind(GLOBAL, period, win, TOP).all();
+      const total = await env.DB.prepare(
+        'SELECT COUNT(*) AS n FROM scores s JOIN members m ON m.id = s.member_id WHERE m.group_code = ? AND s.period = ? AND s.window = ? AND s.usage > 0',
+      ).bind(GLOBAL, period, win).first('n');
+      const mine = await env.DB.prepare('SELECT usage, tokens FROM scores WHERE member_id = ? AND period = ? AND window = ?')
+        .bind(me.id, period, win).first();
+      let place = null;
+      if (mine && mine.usage > 0) {
+        place = 1 + await env.DB.prepare(
+          'SELECT COUNT(*) AS n FROM scores s JOIN members m ON m.id = s.member_id WHERE m.group_code = ? AND s.period = ? AND s.window = ? AND s.usage > ?',
+        ).bind(GLOBAL, period, win, mine.usage).first('n');
+      }
+      return json({
+        period, window: win, total, place, usage: mine ? mine.usage : 0, tokens: mine ? mine.tokens : 0,
+        members: results.map((r, i) => ({ rank: i + 1, nick: r.nick, plans: r.plans, usage: r.usage, tokens: r.tokens, me: r.id === me.id })),
+      });
     }
 
     if (req.method === 'GET' && action === 'ranking') {
@@ -176,7 +218,7 @@ export default {
         env.DB.prepare('DELETE FROM members WHERE id = ?').bind(me.id),
       ]);
       const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM members WHERE group_code = ?').bind(code).first('n');
-      if (!left) await env.DB.prepare('DELETE FROM groups WHERE code = ?').bind(code).run();
+      if (!left && code !== GLOBAL) await env.DB.prepare('DELETE FROM groups WHERE code = ?').bind(code).run();
       return json({ ok: true });
     }
 

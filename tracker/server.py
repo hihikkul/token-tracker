@@ -62,6 +62,13 @@ def make_handler(engine):
                 rep = ranking.report(engine.db, ranking_limits(engine))
                 rep["ranking"] = ranking.state()
                 return self._send(200, rep)
+            if u.path == "/api/ranking/global":
+                try:
+                    res = ranking.global_ranking(engine.db, engine.snapshot.get("limits"), (q.get("period") or ["week"])[0])
+                except ranking.RankingError as e:
+                    return self._send(200, {"error": str(e), "state": ranking.global_state()})
+                res["state"] = ranking.global_state()
+                return self._send(200, res)
             if u.path == "/api/ranking":
                 try:
                     res = ranking.ranking(engine.db, engine.snapshot.get("limits"), (q.get("period") or ["week"])[0])
@@ -126,7 +133,13 @@ def make_handler(engine):
                 b = self._body()
                 nick = str(b.get("nick") or "").strip()[:24]
                 try:
-                    if path == "/api/ranking/create":
+                    if path == "/api/ranking/global/join":
+                        ranking.global_join(nick or ranking.random_nick())
+                    elif path == "/api/ranking/global/leave":
+                        ranking.global_leave()
+                    elif path == "/api/ranking/global/nick":
+                        ranking.global_set_nick(nick or ranking.random_nick())
+                    elif path == "/api/ranking/create":
                         ranking.create(str(b.get("group_name") or "").strip()[:40] or "token-tracker",
                                        nick or ranking.random_nick())
                     elif path == "/api/ranking/join":
@@ -140,7 +153,7 @@ def make_handler(engine):
                         return self._send(404, {"error": "not found"})
                 except ranking.RankingError as e:
                     return self._send(200, {"error": str(e), "state": ranking.state()})
-                if path in ("/api/ranking/create", "/api/ranking/join"):
+                if path in ("/api/ranking/create", "/api/ranking/join", "/api/ranking/global/join", "/api/ranking/global/nick"):
                     try:
                         ranking.sync(engine.db, engine.snapshot.get("limits"), force=True)
                     except ranking.RankingError:
