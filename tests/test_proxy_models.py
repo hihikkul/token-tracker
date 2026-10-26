@@ -158,3 +158,14 @@ class RippleQuota(IsolatedEnvironment):
         self.assertEqual(out["accounts"][0]["plan"], "Business Premium")
         self.assertEqual(out["windows"][0]["used_percent"], 31.0)
         self.assertEqual({a["account"] for a in out["accounts"]}, {"acct-biz", "acct-plus"})
+
+
+class WindowLetter(unittest.TestCase):
+    def test_letters(self):
+        from tracker.widget import window_letter
+        self.assertEqual(window_letter({"window_minutes": 300}), "5")
+        self.assertEqual(window_letter({"window_minutes": 10080}), "W")
+        self.assertEqual(window_letter({"label": "Weekly"}), "W")
+        self.assertEqual(window_letter({"window_minutes": 1440}), "D")
+        self.assertEqual(window_letter({}), "")
+        self.assertEqual(window_letter(None), "")

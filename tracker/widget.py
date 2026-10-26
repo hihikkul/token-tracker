@@ -29,6 +29,18 @@ C = {
 SHORT = {**NAMES, 'claude': 'Claude', 'gemini': 'Gemini CLI'}
 
 
+def window_letter(w):
+    """One character for the ring: 5 for the 5-hour window, W for weekly, D for daily."""
+    if not w:
+        return ""
+    label = w.get("label") or ""
+    mins = w.get("window_minutes") or (300 if label in ("5h", "5시간") else 10080 if label.startswith(("Weekly", "주간")) else None)
+    if not mins:
+        return ""
+    m = int(mins)
+    return "5" if 280 <= m <= 320 else "W" if 9900 <= m <= 10200 else "D" if m == 1440 else ""
+
+
 def pace_left(w):
     """Share of the window's time still to go (0..1), or None when its length is unknown."""
     label = w.get("label") or ""
@@ -60,7 +72,7 @@ RELEASES = "https://github.com/hihikkul/token-tracker/releases/latest"
 FONT = "Segoe UI"
 NUM_FONT = "Segoe UI"
 H = 36       # bar height, about a taskbar button
-GAUGE = 18   # ring size in the bar
+GAUGE = 26   # ring size in the bar (room for the 5 / W letter inside)
 
 
 def pick_fonts(root, wanted, wanted_num):
@@ -662,7 +674,13 @@ class Widget:
                 ring = self._ring(0, C["track"])
             else:
                 ring = self._ring((100 - used) / 100, ring_color(src, used))
-            parts = [tk.Label(self.bar, image=ring, bg=C["bg"]),
+            gauge = tk.Canvas(self.bar, width=GAUGE, height=GAUGE, bg=C["bg"], highlightthickness=0)
+            gauge.create_image(GAUGE // 2, GAUGE // 2, image=ring)
+            letter = window_letter(w) if used is not None else ""
+            if letter:
+                gauge.create_text(GAUGE / 2, GAUGE / 2, text=letter, fill=ring_color(src, used),
+                                  font=(NUM_FONT, -10, "bold"))
+            parts = [gauge,
                      tk.Label(self.bar, text=SHORT[src], bg=C["bg"], fg=C["ink2"], font=(FONT, 10)),
                      tk.Label(self.bar, text="—" if used is None else f"{100 - used:.0f}%", bg=C["bg"],
                               fg=C["muted"] if used is None else num_color(used), font=(NUM_FONT, 11, "bold"))]
