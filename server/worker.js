@@ -73,12 +73,15 @@ async function readJson(req) {
   }
 }
 
-async function auth(req, env, code) {
+async function groupAndMember(req, env, code) {
   const h = req.headers.get('authorization') || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : '';
-  if (!token) return null;
-  const hash = await sha256(token);
-  return env.DB.prepare('SELECT * FROM members WHERE group_code = ? AND token_hash = ?').bind(code, hash).first();
+  const hash = token ? await sha256(token) : null;
+  // A LEFT JOIN distinguishes a missing group (404) from a bad token (401).
+  return env.DB.prepare(
+    'SELECT g.name AS group_name, m.* FROM groups g ' +
+    'LEFT JOIN members m ON m.group_code = g.code AND m.token_hash = ? WHERE g.code = ?',
+  ).bind(hash, code).first();
 }
 
 async function join(env, code, nick) {
@@ -123,11 +126,11 @@ export default {
     const code = isGlobal ? GLOBAL : cleanText(parts[2], 9).toUpperCase();
     const action = isGlobal ? parts[2] : parts[3];
     if (!isGlobal && code === GLOBAL) return err(404, 'group not found');  // only through /v1/global
-    if (isGlobal) await env.DB.prepare("INSERT OR IGNORE INTO groups (code, name, created) VALUES (?, 'Ranking', 0)").bind(GLOBAL).run();
-    const group = await env.DB.prepare('SELECT * FROM groups WHERE code = ?').bind(code).first();
-    if (!group) return err(404, 'group not found');
-
     if (req.method === 'POST' && action === 'join') {
+      // Migration 0003 seeds GLOBAL; retain the fallback only for joining.
+      if (isGlobal) await env.DB.prepare("INSERT OR IGNORE INTO groups (code, name, created) VALUES (?, 'Ranking', 0)").bind(GLOBAL).run();
+      const group = await env.DB.prepare('SELECT * FROM groups WHERE code = ?').bind(code).first();
+      if (!group) return err(404, 'group not found');
       const body = await readJson(req);
       const nick = cleanText(body?.nick, 24);
       if (!nick) return err(400, 'nick required');
@@ -136,8 +139,9 @@ export default {
       return json({ code, name: group.name, ...m }, 201);
     }
 
-    const me = await auth(req, env, code);
-    if (!me) return err(401, 'bad token');
+    const me = await groupAndMember(req, env, code);
+    if (!me) return err(404, 'group not found');
+    if (me.token_hash === null) return err(401, 'bad token');
 
     if (req.method === 'PUT' && action === 'score') {
       const body = await readJson(req);
@@ -174,23 +178,27 @@ export default {
       const eligible = 'FROM scores s JOIN members m ON m.id = s.member_id ' +
         'WHERE m.group_code = ? AND s.period = ? AND s.window = ? ' +
         'AND s.calculation_version = 2 AND s.api > 0 AND s.sub > 0';
-      const { results } = await env.DB.prepare(
-        'SELECT m.id, m.nick, m.plans, s.api, s.sub, (1.0 * s.api / s.sub) AS ratio, s.usage, s.tokens ' +
-        eligible + ' ORDER BY ratio DESC, s.api DESC, m.id ASC LIMIT ?',
-      ).bind(GLOBAL, period, win, TOP).all();
-      const total = await env.DB.prepare('SELECT COUNT(*) AS n ' + eligible)
-        .bind(GLOBAL, period, win).first('n');
-      const mine = await env.DB.prepare('SELECT api, sub, usage, tokens, calculation_version FROM scores WHERE member_id = ? AND period = ? AND window = ?')
-        .bind(me.id, period, win).first();
+      const [topRows, totalRows, mineRows, placeRows] = await env.DB.batch([
+        env.DB.prepare(
+          'SELECT m.id, m.nick, m.plans, s.api, s.sub, (1.0 * s.api / s.sub) AS ratio, s.usage, s.tokens ' +
+          eligible + ' ORDER BY ratio DESC, s.api DESC, m.id ASC LIMIT ?',
+        ).bind(GLOBAL, period, win, TOP),
+        env.DB.prepare('SELECT COUNT(*) AS n ' + eligible).bind(GLOBAL, period, win),
+        env.DB.prepare('SELECT api, sub, usage, tokens, calculation_version FROM scores WHERE member_id = ? AND period = ? AND window = ?')
+          .bind(me.id, period, win),
+        env.DB.prepare(
+          'WITH mine AS (SELECT api, sub, (1.0 * api / sub) AS ratio FROM scores ' +
+          'WHERE member_id = ? AND period = ? AND window = ? AND calculation_version = 2 AND api > 0 AND sub > 0) ' +
+          'SELECT 1 + (SELECT COUNT(*) ' + eligible + ' AND ((1.0 * s.api / s.sub) > mine.ratio ' +
+          'OR ((1.0 * s.api / s.sub) = mine.ratio AND s.api > mine.api) ' +
+          'OR ((1.0 * s.api / s.sub) = mine.ratio AND s.api = mine.api AND m.id < ?))) AS place FROM mine',
+        ).bind(me.id, period, win, GLOBAL, period, win, me.id),
+      ]);
+      const results = topRows.results;
+      const total = totalRows.results[0].n;
+      const mine = mineRows.results[0];
       const ratio = mine && mine.sub > 0 ? mine.api / mine.sub : null;
-      let place = null;
-      if (mine && mine.api > 0 && mine.sub > 0 && mine.calculation_version === 2) {
-        place = 1 + await env.DB.prepare(
-          'SELECT COUNT(*) AS n ' + eligible + ' AND ((1.0 * s.api / s.sub) > ? ' +
-          'OR ((1.0 * s.api / s.sub) = ? AND s.api > ?) ' +
-          'OR ((1.0 * s.api / s.sub) = ? AND s.api = ? AND m.id < ?))',
-        ).bind(GLOBAL, period, win, ratio, ratio, mine.api, ratio, mine.api, me.id).first('n');
-      }
+      const place = placeRows.results[0]?.place ?? null;
       return json({
         period, window: win, total, place, ratio, api: mine ? mine.api : 0, sub: mine ? mine.sub : 0,
         usage: mine ? mine.usage : 0, tokens: mine ? mine.tokens : 0, plans: me.plans || '',
@@ -203,10 +211,10 @@ export default {
     if (req.method === 'GET' && action === 'ranking') {
       const period = PERIODS.includes(url.searchParams.get('period')) ? url.searchParams.get('period') : 'week';
       const win = cleanWindow(url.searchParams.get('window'));
-      const { results } = await env.DB.prepare(
+      const [{ results }] = await env.DB.batch([env.DB.prepare(
         'SELECT m.id, m.nick, m.plans, m.updated, s.window, s.api, s.sub, s.calculation_version FROM members m ' +
         'LEFT JOIN scores s ON s.member_id = m.id AND s.period = ? WHERE m.group_code = ?',
-      ).bind(period, code).all();
+      ).bind(period, code)]);
       const members = results.map((r) => {
         const current = r.window && (!win || r.window === win) && r.calculation_version === 2;
         const api = current ? r.api : 0;
@@ -218,7 +226,7 @@ export default {
         };
       });
       members.sort((a, b) => (b.ratio ?? -1) - (a.ratio ?? -1) || b.api - a.api);
-      return json({ code, name: group.name, period, window: win, members });
+      return json({ code, name: me.group_name, period, window: win, members });
     }
 
     if (req.method === 'DELETE' && action === 'me') {

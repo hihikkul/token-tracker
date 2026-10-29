@@ -2,6 +2,10 @@ name = "token-tracker-rank"
 main = "worker.js"
 compatibility_date = "2025-09-01"
 
+# Run near D1 to reduce cross-region database round-trip latency.
+[placement]
+mode = "smart"
+
 # deploy_server.bat fills in database_id after `wrangler d1 create token-tracker-rank`
 [[d1_databases]]
 binding = "DB"
