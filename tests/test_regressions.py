@@ -222,9 +222,9 @@ class RankingGroups(unittest.TestCase):
                 patch.object(ranking, '_score_body', return_value={'periods': {}}) as score:
             with self.assertRaises(ranking.RankingError):
                 ranking.sync(None, {}, force=True)
-        self.assertEqual([c.args[1] for c in remote.call_args_list],
-                         ['/v1/groups/AAAA-BBBB/score', '/v1/groups/CCCC-DDDD/score', '/v1/global/score'])
-        self.assertEqual([c.args[2]['nick'] for c in remote.call_args_list], ['하나', '둘', '전체'])
+        self.assertCountEqual([(c.args[1], c.args[2]['nick']) for c in remote.call_args_list],
+                              [('/v1/groups/AAAA-BBBB/score', '하나'),
+                               ('/v1/groups/CCCC-DDDD/score', '둘'), ('/v1/global/score', '전체')])
         score.assert_called_once()
 
     def test_detected_plan_score_has_price_without_manual_config_and_no_account_suffix(self):
@@ -285,7 +285,7 @@ for (const file of fs.readdirSync(path.join(root, 'server/migrations')).sort()) 
 const wrap = statement => ({ values: [], bind(...args) { this.values = args; return this; },
   async first(column) { const row = statement.get(...this.values); return column ? row?.[column] ?? null : row || null; },
   async all() { return {results: statement.all(...this.values)}; }, async run() { return statement.run(...this.values); } });
-const env = {DB:{prepare: text => wrap(sql.prepare(text)), batch: stmts => Promise.all(stmts.map(s => s.run()))}};
+const env = {DB:{prepare: text => wrap(sql.prepare(text)), batch: stmts => Promise.all(stmts.map(s => s.all()))}};
 const source = fs.readFileSync(path.join(root, 'server/worker.js'), 'utf8');
 const worker = (await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))).default;
 const member = (id, api, sub, usage=api, version=2, group='GLOBAL', period='month', win='2026-10') => {

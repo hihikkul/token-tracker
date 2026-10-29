@@ -22,6 +22,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 from datetime import date, datetime, timedelta
 
@@ -428,12 +429,16 @@ def sync(db, limits, force=False):
             return False
         body = _score_body(db, limits, cfg, '')
         errors = []
-        for path, member in targets:
-            try:
-                _call('PUT', path, dict(body, nick=member.get('nick') or ''),
-                      token=member['token'], cfg=cfg)
-            except RankingError as error:
-                errors.append(error)  # one expired membership must not block other groups/global
+        with ThreadPoolExecutor(max_workers=min(32, len(targets))) as pool:
+            futures = [pool.submit(_call, 'PUT', path, dict(body, nick=member.get('nick') or ''),
+                                   token=member['token'], cfg=cfg)
+                       for path, member in targets]
+            # Consume in target order, not completion order, to preserve the first error.
+            for future in futures:
+                try:
+                    future.result()
+                except RankingError as error:
+                    errors.append(error)  # one expired membership must not block other groups/global
         _last_sync['t'] = time.time()
         if errors:
             raise errors[0]
