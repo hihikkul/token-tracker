@@ -19,10 +19,10 @@ NAME = "token-tracker-rank"
 WIN = os.name == "nt"
 
 
-def wr(*args, capture=False):
+def wr(*args, capture=False, cwd=HERE):
     cmd = ["npx", "--yes", "wrangler@4", *args]
     print("\n>", " ".join(cmd[2:]))
-    r = subprocess.run(cmd, cwd=HERE, shell=WIN, text=True, encoding="utf-8", errors="replace",
+    r = subprocess.run(cmd, cwd=cwd, shell=WIN, text=True, encoding="utf-8", errors="replace",
                        capture_output=capture)
     if capture:
         if r.returncode:
@@ -54,21 +54,40 @@ def main():
         print("D1 데이터베이스를 만들지 못했어요.")
         return 1
 
-    toml = HERE / "wrangler.toml"
-    text = toml.read_text(encoding="utf-8")
-    toml.write_text(re.sub(r'database_id = "[^"]*"', f'database_id = "{db_id}"', text), encoding="utf-8")
+    for toml in (HERE / "wrangler.toml", HERE / "pages" / "wrangler.toml"):
+        text = toml.read_text(encoding="utf-8")
+        toml.write_text(re.sub(r'database_id = "[^"]*"', f'database_id = "{db_id}"', text), encoding="utf-8")
 
     if wr("d1", "execute", NAME, "--remote", "--file=schema.sql", "--yes").returncode:
         return 1
     if wr('d1', 'migrations', 'apply', NAME, '--remote').returncode:
         return 1
-    r = wr("deploy", capture=True)
+    r = wr("deploy", capture=True)  # the older address, which older copies of the app still use
     print(r.stdout[-1500:])
-    m = re.search(r"https://[\w.-]+\.workers\.dev", r.stdout + r.stderr)
-    if r.returncode or not m:
+    if r.returncode:
+        print("Worker를 배포하지 못했어요. 위 메시지를 확인해 주세요.")
+        return 1
+
+    def pages_url():
+        r = wr("pages", "project", "list", "--json", capture=True)
+        try:
+            for p in json.loads(r.stdout[r.stdout.index("["):]):
+                if p.get("Project Name") == NAME:
+                    return "https://" + p["Project Domains"].split(",")[0].strip()
+        except (ValueError, KeyError, AttributeError):
+            pass
+        return None
+    if not pages_url():
+        # --force: without it, newer wrangler runs `wrangler deploy` instead of creating a Pages project,
+        # which from this folder's config would redeploy the Worker, on the slow *.workers.dev route.
+        wr("pages", "project", "create", NAME, "--production-branch", "main", "--force", cwd=HERE / "pages")
+    r = wr("pages", "deploy", "dist", "--project-name", NAME, "--branch", "main", "--commit-dirty=true",
+           capture=True, cwd=HERE / "pages")
+    print(r.stdout[-1500:])
+    url = pages_url()
+    if r.returncode or not url:
         print("배포 주소를 찾지 못했어요. 위 메시지를 확인해 주세요.")
         return 1
-    url = m.group(0)
 
     from tracker import paths  # remember it for this PC right away
     cfg = paths.load_config()

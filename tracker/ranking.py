@@ -17,6 +17,7 @@ import json
 import hashlib
 import secrets
 import re
+import ssl
 import unicodedata
 import threading
 import time
@@ -31,7 +32,10 @@ from .pricing import cost
 from .sources import enabled
 
 # Shared ranking service. config.json `ranking.server` overrides this address.
-DEFAULT_SERVER = "https://token-tracker-rank.hihikkul-token-tracker.workers.dev"
+DEFAULT_SERVER = "https://token-tracker-rank.pages.dev"
+# The same server and data at its older address, which older copies of the app still use. From Korea
+# it goes through Los Angeles and is ten times slower, so it is only a fallback.
+BACKUP_SERVER = "https://token-tracker-rank.hihikkul-token-tracker.workers.dev"
 
 SOURCES = ("claude", "codex", "gemini")
 NAMES = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
@@ -260,9 +264,19 @@ def server_url(cfg=None):
     settings = cfg.get('ranking') or {}
     url = (settings.get('server') or DEFAULT_SERVER).rstrip('/')
     host = urlparse(url).hostname
-    if host in ('localhost', '127.0.0.1', '::1') and not settings.get('allow_local_server'):
+    if url == BACKUP_SERVER or (host in ('localhost', '127.0.0.1', '::1') and not settings.get('allow_local_server')):
         return DEFAULT_SERVER
     return url
+
+
+def _connection_error(error):
+    """Say what went wrong: a certificate failure and a slow network need different fixes."""
+    reason = getattr(error, "reason", error)
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return RankingError("This PC could not verify the ranking server's certificate.")
+    if isinstance(reason, TimeoutError):
+        return RankingError("The ranking server took too long to answer. Try again in a moment.")
+    return RankingError("Could not connect to the public ranking server. Update Token Tracker and check your connection.")
 
 
 def _call(method, path, body=None, token=None, cfg=None):
@@ -270,22 +284,32 @@ def _call(method, path, body=None, token=None, cfg=None):
     if not base:
         raise RankingError("No ranking server configured")
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(base + path, data=data, method=method,
-                                 headers={"Content-Type": "application/json", "User-Agent": "token-tracker",
-                                          **({"Authorization": f"Bearer {token}"} if token else {})})
-    try:
-        with urllib.request.urlopen(req, timeout=12) as r:
-            return json.loads(r.read().decode("utf-8") or "{}")
-    except urllib.error.HTTPError as e:
+    headers = {"Content-Type": "application/json", "User-Agent": "token-tracker",
+               **({"Authorization": f"Bearer {token}"} if token else {})}
+    failure = None
+    for url in [base, BACKUP_SERVER] if base == DEFAULT_SERVER else [base]:
+        req = urllib.request.Request(url + path, data=data, method=method, headers=headers)
         try:
-            msg = json.loads(e.read().decode("utf-8")).get("error")
-        except (ValueError, OSError):
-            msg = None
-        raise RankingError({"group not found": "Invite code not found", "group is full": "Group is full (50 members maximum)",
-                            "bad token": "Membership expired. Join the group again.",
-                            "not found": "The ranking server needs an update"}.get(msg, msg or f"Server error {e.code}"))
-    except (urllib.error.URLError, TimeoutError, OSError):
-        raise RankingError("Could not connect to the public ranking server. Update Token Tracker and check your connection.")
+            with urllib.request.urlopen(req, timeout=12) as r:
+                return json.loads(r.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as e:
+            if e.code >= 500 and method != "POST":
+                failure = RankingError(f"Server error {e.code}")
+                continue
+            try:
+                msg = json.loads(e.read().decode("utf-8")).get("error")
+            except (ValueError, OSError):
+                msg = None
+            raise RankingError({"group not found": "Invite code not found", "group is full": "Group is full (50 members maximum)",
+                                "bad token": "Membership expired. Join the group again.",
+                                "not found": "The ranking server needs an update"}.get(msg, msg or f"Server error {e.code}"))
+        except urllib.error.URLError as e:  # no response yet: the request may be repeated elsewhere
+            failure = _connection_error(e)
+        except (TimeoutError, OSError, ValueError) as e:
+            failure = _connection_error(e)
+            if method == "POST":  # it may have reached the server: a second join would add a second member
+                break
+    raise failure
 
 
 def _groups(cfg):
@@ -335,8 +359,15 @@ def create(group_name, nick):
     return res
 
 
+def _invite_code(text):
+    """The code in what someone typed: the code itself, or the whole invite link the app hands out."""
+    text = text.strip().upper()
+    link = re.search(r'[?&]INVITE=([A-Z2-9]{4}-[A-Z2-9]{4})(?![A-Z2-9])', text)
+    return link.group(1) if link else text
+
+
 def join(code, nick):
-    code = code.strip().upper()
+    code = _invite_code(code)
     if not re.fullmatch(r'[A-Z2-9]{4}-[A-Z2-9]{4}', code):
         raise RankingError('Invite code not found')
     cfg = paths.load_config()
@@ -424,7 +455,10 @@ def sync(db, limits, force=False):
         targets.append(('/v1/global/score', global_member))
     if not (targets and server_url(cfg)):
         return False
+    asked = time.time()
     with _lock:
+        if _last_sync['t'] >= asked:
+            return False  # the dashboard loads several rankings at once: another one just sent these numbers
         if not force and time.time() - _last_sync['t'] < SYNC_EVERY:
             return False
         body = _score_body(db, limits, cfg, '')

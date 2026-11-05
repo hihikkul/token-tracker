@@ -79,8 +79,8 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 
 - *새 그룹 만들기*로 초대 코드를 받고, 친구는 *초대 코드로 참가*.
 - 서버로 가는 건 닉네임, 요금제 이름, 기간별 API 환산 금액과 구독료 몫뿐이에요. 대화 내용, 프로젝트, 모델별 기록은 보내지 않아요. 15분마다 갱신돼요.
-- 공유 서버는 Cloudflare Workers + D1 (`server/`)에서 운영 중이에요. 별도 서버 설치 없이 그룹을 만들거나 초대 코드로 참가하면 됩니다.
-- 서버 주소: https://token-tracker-rank.hihikkul-token-tracker.workers.dev
+- 공유 서버는 Cloudflare Pages + D1 (`server/`)에서 운영 중이에요. 별도 서버 설치 없이 그룹을 만들거나 초대 코드로 참가하면 됩니다.
+- 서버 주소: https://token-tracker-rank.pages.dev
 - 친구에게는 **초대 링크 복사**로 복사한 공개 안내 링크를 보내세요. 친구도 트래커를 설치하고 본인 PC의 **랭킹 → 초대 코드로 참가**에서 참가해요. `127.0.0.1` 대시보드 주소는 친구에게 공유할 수 없어요.
 - 오래된 설정의 localhost 랭킹 주소는 공개 서버로 교정해요. 개발 목적으로 로컬 서버를 쓸 때만 `ranking.allow_local_server: true`를 지정하세요.
 - 별도 서버를 직접 운영하려면 `deploy_server.bat` (Mac은 `deploy_server.command`)로 본인 Cloudflare 계정에 배포할 수 있어요. Node.js와 Cloudflare 로그인이 필요합니다.

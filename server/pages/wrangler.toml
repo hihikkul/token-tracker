@@ -1,0 +1,11 @@
+# The ranking server on Cloudflare Pages: the same code and database as the Worker in ../wrangler.toml.
+# From Korea, *.pages.dev lands on the Seoul edge while *.workers.dev goes through Los Angeles.
+name = "token-tracker-rank"
+pages_build_output_dir = "dist"
+compatibility_date = "2025-09-01"
+
+# deploy_server.bat fills in database_id, like the one in ../wrangler.toml
+[[d1_databases]]
+binding = "DB"
+database_name = "token-tracker-rank"
+database_id = "fb1facbb-ae16-498e-b30c-70611b272129"
