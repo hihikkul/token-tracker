@@ -7,12 +7,15 @@ lists them on its local admin API (127.0.0.1, metadata only, no tokens). Account
 account file; nothing else is read there.
 """
 import json
+import re
 import time
 import urllib.request
+from datetime import datetime
 
 from . import paths
 
 _NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+_ROUTER_ACCOUNT = re.compile(r"^(\d\d-\d\d \d\d:\d\d:\d\d) .*\baccount=([0-9a-f]{8})\b")
 
 
 def _admin_port(home):
@@ -53,20 +56,63 @@ def _window(key, w, at):
             "window_minutes": w.get("window_minutes"), "resets_at": float(reset) if reset else None}
 
 
-def chatgpt_snapshots(timeout=1.0):
-    """Quota snapshots shaped like the ones read from Codex logs; [] without ClaudeRipple."""
-    home = paths.clauderipple_home()
+def _live_accounts(home, timeout):
+    """The accounts on ClaudeRipple's admin API; [] when it is not running."""
     if not home.exists():
         return []
     try:
         url = f"http://127.0.0.1:{_admin_port(home)}/api/chatgpt-accounts"
         with _NO_PROXY.open(url, timeout=timeout) as r:
-            data = json.loads(r.read().decode("utf-8"))
-    except (OSError, ValueError):
-        return []  # ClaudeRipple not running
+            return json.loads(r.read().decode("utf-8")).get("accounts") or []
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def active_account(timeout=1.0):
+    """The ChatGPT workspace id ClaudeRipple is sending with right now, if it is running."""
+    home = paths.clauderipple_home()
+    for a in _live_accounts(home, timeout):
+        if a.get("active"):
+            return _account_ids(home).get(a.get("id"))
+    return None
+
+
+def account_timeline():
+    """(unix time, workspace id) of each request ClaudeRipple's router logs tied to an account,
+    oldest first. Log lines carry no year, so a date still ahead of today belongs to last year."""
+    home = paths.clauderipple_home()
+    ids = {k[:8]: v for k, v in _account_ids(home).items()}
+    now = datetime.now()
+    out = []
+    for log in (home / "logs").glob("router.log*"):
+        try:
+            f = open(log, encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with f:
+            for line in f:
+                m = _ROUTER_ACCOUNT.match(line)
+                if not m or m.group(2) not in ids:
+                    continue
+                try:
+                    at = datetime.strptime(f"{now.year}-{m.group(1)}", "%Y-%m-%d %H:%M:%S")
+                    if at > now:
+                        at = at.replace(year=now.year - 1)
+                except ValueError:
+                    continue
+                out.append((int(at.timestamp()), ids[m.group(2)]))
+    return sorted(out)
+
+
+def chatgpt_snapshots(timeout=1.0):
+    """Quota snapshots shaped like the ones read from Codex logs; [] without ClaudeRipple."""
+    home = paths.clauderipple_home()
+    accounts = _live_accounts(home, timeout)
+    if not accounts:
+        return []
     ids = _account_ids(home)
     out = []
-    for a in data.get("accounts") or []:
+    for a in accounts:
         q = a.get("quota") or {}
         rl = q.get("rate_limits") or {}
         acct = ids.get(a.get("id"))

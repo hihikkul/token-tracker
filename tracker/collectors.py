@@ -11,10 +11,11 @@ import json
 import os
 import re
 import time
+from bisect import bisect
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import paths
+from . import paths, ripple
 
 
 def parse_ts(v):
@@ -121,16 +122,21 @@ def claude_log_source(model):
 def proxy_chatgpt_account():
     """The ChatGPT login that answers GPT turns proxied out of Claude Code.
 
-    ClaudeRipple sends each turn with the first usable account in its own login list
-    (chatgpt-accounts.json, in order, skipping paused or signed-out ones) and only then the Codex
-    CLI's login; another account is used only while that one fails. Without ClaudeRipple, the
-    Codex CLI's login is the account a ChatGPT-plan proxy would borrow. Only ids are read here."""
+    A running ClaudeRipple says which account it is sending with right now, which moves whenever one
+    runs out. When it cannot be asked, its next pick is the login marked preferred, then the first
+    usable one in chatgpt-accounts.json (skipping paused or signed-out ones), and only then the
+    Codex CLI's login. Without ClaudeRipple, the Codex CLI's login is the account a ChatGPT-plan
+    proxy would borrow. Only ids are read here."""
+    active = ripple.active_account()
+    if active:
+        return active
     try:
         data = json.loads((paths.clauderipple_home() / "chatgpt-accounts.json").read_text(encoding="utf-8"))
         accounts = data.get("accounts", data) if isinstance(data, dict) else data
-        for a in accounts or []:
-            if isinstance(a, dict) and a.get("accountId") and not a.get("paused") and not a.get("needsReauth"):
-                return a["accountId"]
+        usable = [a for a in accounts or [] if isinstance(a, dict) and a.get("accountId")
+                  and not a.get("paused") and not a.get("needsReauth")]
+        if usable:
+            return max(usable, key=lambda a: bool(a.get("preferred")))["accountId"]
     except (OSError, ValueError, AttributeError):
         pass
     try:
@@ -155,8 +161,9 @@ def _assign_proxy_accounts(db):
 
 
 def _split_claude_vendors(db):
-    """One-off: move earlier non-Claude turns out of the Claude bucket."""
-    if db.get_kv("claude_vendor_split") == 1:
+    """One-off: move earlier non-Claude turns out of the Claude bucket. Runs again at version 2 for
+    turns an older copy of the app stored under Claude after the first run."""
+    if db.get_kv("claude_vendor_split") == 2:
         return
     models = [r["model"] for r in db.query("SELECT DISTINCT model FROM records WHERE source = 'claude'")]
     from .db import _lock
@@ -166,13 +173,63 @@ def _split_claude_vendors(db):
             if src != "claude":
                 db.conn.execute("UPDATE records SET source = ? WHERE source = 'claude' AND model = ?", (src, m))
         db.conn.commit()
-    db.set_kv("claude_vendor_split", 1)
+    db.set_kv("claude_vendor_split", 2)
+
+
+def _is_usage_placeholder(source, usage):
+    """A proxy's first line for a turn holds only its estimate of the whole prompt as input, before
+    the model answers: no cache split and no output. Proxied turns are billed mostly as cache reads,
+    so counting it as input can overstate a turn a hundred times. Claude's own first line is exact."""
+    return source != "claude" and not (usage.get("output_tokens") or usage.get("cache_read_input_tokens")
+                                       or usage.get("cache_creation_input_tokens"))
+
+
+def _repair_proxy_usage(db):
+    """One-off: older versions kept a placeholder's input even after the real numbers arrived.
+    Re-read those turns from the logs still on disk, then drop the ones that never got real numbers."""
+    if db.get_kv("claude_proxy_usage_repaired") == 1:
+        return
+    final = {}
+    for root in paths.claude_project_dirs():
+        for path in root.rglob("*.jsonl"):
+            try:
+                f = open(path, encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            with f:
+                for line in f:
+                    if '"usage"' not in line:
+                        continue
+                    try:
+                        o = json.loads(line)
+                    except ValueError:
+                        continue
+                    msg = (o.get("message") or {}) if isinstance(o, dict) else {}
+                    u, model = msg.get("usage"), msg.get("model")
+                    if not u or not model or model == "<synthetic>" or not msg.get("id"):
+                        continue
+                    src = claude_log_source(model)
+                    if src == "claude" or _is_usage_placeholder(src, u):
+                        continue
+                    uid = f"c:{msg['id']}:{o.get('requestId')}"
+                    if uid not in final or u.get("output_tokens", 0) >= final[uid][3]:
+                        final[uid] = (u.get("input_tokens", 0), u.get("cache_read_input_tokens", 0),
+                                      u.get("cache_creation_input_tokens", 0), u.get("output_tokens", 0), uid)
+    from .db import _lock
+    with _lock:
+        db.conn.executemany("UPDATE records SET input = ?, cache_read = ?, cache_write = ?, output = ? "
+                            "WHERE uid = ? AND source <> 'claude'", list(final.values()))
+        db.conn.execute("DELETE FROM records WHERE uid LIKE 'c:%' AND source <> 'claude' "
+                        "AND output = 0 AND cache_read = 0 AND cache_write = 0")
+        db.conn.commit()
+    db.set_kv("claude_proxy_usage_repaired", 1)
 
 
 def scan_claude(db, report):
     n_files = n_rows = 0
     _split_claude_vendors(db)
     _assign_proxy_accounts(db)
+    _repair_proxy_usage(db)
     proxy_acct = None
     for root in paths.claude_project_dirs():
         for path in root.rglob("*.jsonl"):
@@ -198,6 +255,8 @@ def scan_claude(db, report):
                 mid, rid = msg.get("id"), o.get("requestId")
                 uid = f"c:{mid}:{rid}" if mid else f"c:{path}:{lineno}"
                 src = claude_log_source(model)
+                if _is_usage_placeholder(src, u):
+                    continue
                 if src == "codex" and proxy_acct is None:
                     proxy_acct = proxy_chatgpt_account() or ""
                 rows.append({
@@ -244,6 +303,27 @@ def _codex_limits_snapshot(rl, ts):
     return out if out["windows"] else None
 
 
+def _quota_resets(snap):
+    return {w.get("window_minutes"): w.get("resets_at") for w in snap.get("windows", [])
+            if w.get("resets_at") and w.get("window_minutes")}
+
+
+def same_quota(a, b):
+    """Two snapshots show one quota when their longest shared window resets at the same moment."""
+    ra, rb = _quota_resets(a), _quota_resets(b)
+    common = [m for m in ra if m in rb]
+    return bool(common) and abs(ra[max(common)] - rb[max(common)]) <= 120
+
+
+def _quota_owner(snap, live):
+    """The ClaudeRipple account whose live quota this logged snapshot shows.
+
+    Codex logs name the login that created a session, but ClaudeRipple may answer its requests with
+    another account. The quota in the log is the one that really answered, so it identifies it."""
+    owners = {s["account"] for s in live if same_quota(snap, s)}
+    return owners.pop() if len(owners) == 1 else None
+
+
 def _limits_key(snap, acct):
     # Distinct account IDs remain distinct even when both use the same plan.
     # Observed mid-session plan changes are passed here with no verified account ID.
@@ -284,12 +364,38 @@ def _keep_limits(accounts, snap, acct, plans, learn):
     return learn
 
 
-LIMITS_VERSION = 6
+LIMITS_VERSION = 7
+ROUTER_MATCH_SEC = 6 * 3600
+
+
+def _assign_accounts_from_router(db):
+    """One-off: ClaudeRipple's router log names the account behind each Codex request. Records stored
+    under a session's creator, or under the first login on ClaudeRipple's list, take the account seen
+    closest in time. Its GPT turns from Claude Code are not logged per account but use the same pick.
+    Records with no log line nearby keep what they had."""
+    if db.get_kv("codex_router_accounts") == 1:
+        return
+    timeline = ripple.account_timeline()
+    if timeline:
+        times = [t for t, _ in timeline]
+        updates = []
+        for r in db.query("SELECT uid, ts FROM records WHERE source = 'codex' AND ts >= ?",
+                          (times[0] - ROUTER_MATCH_SEC,)):
+            i = bisect(times, r["ts"])
+            at, acct = min(timeline[max(i - 1, 0):i + 1], key=lambda e: abs(e[0] - r["ts"]))
+            if abs(at - r["ts"]) <= ROUTER_MATCH_SEC:
+                updates.append((acct, r["uid"]))
+        from .db import _lock
+        with _lock:
+            db.conn.executemany("UPDATE records SET account = ? WHERE uid = ?", updates)
+            db.conn.commit()
+    db.set_kv("codex_router_accounts", 1)
 
 
 def _rebuild_codex_limits(db):
     """One-off re-read of the last 8 days of Codex logs after the limits keying changed."""
     accounts, plans, cutoff = {}, {}, time.time() - 8 * 86400
+    live = ripple.chatgpt_snapshots()
     files = []
     for d in paths.codex_session_dirs():
         for path in d.rglob("*.jsonl"):
@@ -322,7 +428,7 @@ def _rebuild_codex_limits(db):
                         if snap:
                             identity_plan = identity_plan or snap.get('plan')
                             owner = None if snap.get('plan') and identity_plan != snap['plan'] else acct
-                            learn = _keep_limits(accounts, snap, owner, plans, learn)
+                            learn = _keep_limits(accounts, snap, _quota_owner(snap, live) or owner, plans, learn)
     db.set_kv("codex_limits_by_account", accounts)
     db.set_kv("codex_plan_by_account", plans)
     db.set_kv("codex_limits_version", LIMITS_VERSION)
@@ -337,6 +443,7 @@ def scan_codex(db, report):
         _rebuild_codex_limits(db)
     accounts = db.get_kv("codex_limits_by_account") or {}  # plan -> latest snapshot
     plans = db.get_kv("codex_plan_by_account") or {}        # login -> last plan seen
+    live = ripple.chatgpt_snapshots()
     for d in paths.codex_session_dirs():
         for path in d.rglob("*.jsonl"):
             n_files += 1
@@ -355,6 +462,7 @@ def scan_codex(db, report):
             learn = state.get("learn", True)
             identity_plan = state.get('identity_plan')
             conflict = state.get('account_conflict', False)
+            served = state.get('served')  # the account that really answered, when ClaudeRipple shows it
             prev = state.get("prev") or {}
             rows = []
             for _, o in res["lines"]:
@@ -381,7 +489,8 @@ def scan_codex(db, report):
                     identity_plan = identity_plan or snap.get('plan')
                     if snap.get('plan'):
                         conflict = snap['plan'] != identity_plan
-                    learn = _keep_limits(accounts, snap, None if conflict else acct, plans, learn)
+                    served = _quota_owner(snap, live) or served
+                    learn = _keep_limits(accounts, snap, served or (None if conflict else acct), plans, learn)
                     if acct and snap.get('account') and snap['account'] != acct:
                         conflict = True
                 info = p.get("info") or {}
@@ -404,7 +513,7 @@ def scan_codex(db, report):
                     # later moved to archived_sessions, so it is never counted twice
                     "uid": f"x:{sid}:{cur['total_tokens']}", "source": "codex", "ts": ts,
                     "model": model or "codex", "project": _project_name(cwd),
-                    "session": sid, 'account': None if conflict else acct,
+                    "session": sid, 'account': served or (None if conflict else acct),
                     "input": max(0, delta["input_tokens"] - cached - cwrite),
                     "output": max(0, delta["output_tokens"]),
                     "cache_read": cached, "cache_write": cwrite,
@@ -412,11 +521,12 @@ def scan_codex(db, report):
                 })
             n_rows += db.upsert_records(rows)
             res["commit"]({"sid": sid, "model": model, "cwd": cwd, "acct": acct, "prev": prev, "learn": learn,
-                           'identity_plan':identity_plan, 'account_conflict':conflict})
+                           'identity_plan':identity_plan, 'account_conflict':conflict, 'served':served})
     if accounts:
         db.set_kv("codex_limits_by_account", accounts)
         db.set_kv("codex_plan_by_account", plans)
     db.set_kv('codex_record_accounts_version', 2)
+    _assign_accounts_from_router(db)
     report["codex"] = {"files": n_files, "new_records": n_rows, "accounts": len(accounts),
                        "dirs": [str(p) for p in paths.codex_session_dirs()]}
 
