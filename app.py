@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from tracker import paths, stats  # noqa: E402
+from tracker import paths, stats, tls  # noqa: E402
 from tracker.collectors import scan_all  # noqa: E402
 from tracker.db import DB  # noqa: E402
 from tracker.engine import Engine  # noqa: E402
@@ -79,6 +79,7 @@ def main():
     ap.add_argument("--wait-port", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--refresh-shortcuts", action="store_true", help=argparse.SUPPRESS)  # after an exe update  # after self-update
     a = ap.parse_args()
+    tls.install()
 
     if a.refresh_shortcuts:
         from tracker.shortcuts import refresh_existing

@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 
 from . import paths
-from .collectors import parse_ts
+from .collectors import parse_ts, same_quota
 
 CLAUDE_URL = "https://api.anthropic.com/api/oauth/usage"
 # Claude Code's public OAuth client (same values the Claude Code CLI uses to refresh its login)
@@ -262,16 +262,21 @@ def _codex_one(snap, now):
 
 def codex_limits(db):
     snaps = list((db.get_kv("codex_limits_by_account") or {}).values())
+    now = time.time()
     try:  # live quotas of accounts that ClaudeRipple uses for GPT inside Claude Code
         from .ripple import chatgpt_snapshots
-        snaps += chatgpt_snapshots()
+        live = chatgpt_snapshots()
     except Exception:
-        pass
+        live = []
+    # ClaudeRipple reads each quota from that account's own responses. While its window is still open,
+    # a logged snapshot with other reset times was answered by another account despite the session's label.
+    held = {s["account"]: s for s in live}
+    snaps = [s for s in snaps if s.get("account") not in held or same_quota(s, held[s["account"]])
+             or not any((w.get("resets_at") or 0) > now for w in held[s["account"]]["windows"])] + live
     out = {"source": "codex", "windows": [], "accounts": [], "status": "ok", "message": ""}
     if not snaps:
         out.update(status="no_data", message="No quota information in Codex logs yet")
         return out
-    now = time.time()
     if any(s.get("account") for s in snaps):
         snaps = [s for s in snaps if s.get("account")]  # old logs carried no account id
     # newest first; the account ClaudeRipple is sending with right now leads when it reports one
@@ -279,15 +284,6 @@ def codex_limits(db):
     # Two snapshots belong to the same quota when their windows reset at the same moments
     # (a plan-less snapshot from newer Codex builds and a labelled one, or old keying).
     # Keep the newest values and borrow the plan name from any snapshot in the group.
-    def resets(s):
-        return {w.get("window_minutes"): w.get("resets_at") for w in s.get("windows", [])
-                if w.get("resets_at") and w.get("window_minutes")}
-
-    def same_quota(a, b):  # judged on the longest window both have (the weekly one)
-        ra, rb = resets(a), resets(b)
-        common = [m for m in ra if m in rb]
-        return bool(common) and abs(ra[max(common)] - rb[max(common)]) <= 120
-
     uniq = []
     for s in snaps:  # newest first
         hit = next((u for u in uniq if u.get("limit_id") == s.get("limit_id")

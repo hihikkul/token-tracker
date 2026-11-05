@@ -60,6 +60,7 @@ class DB:
         VALUES(:uid, :source, :ts, :model, :project, :session, :account,
                :input, :output, :cache_write, :cache_read, :reasoning)
         ON CONFLICT(uid) DO UPDATE SET
+            source = excluded.source,
             input = max(input, excluded.input),
             output = max(output, excluded.output),
             cache_write = max(cache_write, excluded.cache_write),

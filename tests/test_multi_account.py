@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import time
 import unittest
@@ -10,6 +11,9 @@ from tracker.db import DB
 
 class MultiAccount(unittest.TestCase):
     def setUp(self):
+        env=patch.dict(os.environ,{'CLAUDERIPPLE_HOME':str(Path(__file__).parent/'no-clauderipple')})
+        env.start()
+        self.addCleanup(env.stop)
         self.db=DB(':memory:')
         self.cfg={'sources':{'codex':True},'subscription_plans':{'codex':'auto'}}
 
