@@ -298,7 +298,8 @@ class CollectorFixes(unittest.TestCase):
         def fake_stat(p, *args, **kwargs):
             st = original_stat(p, *args, **kwargs)
             if p in (path, large):
-                return SimpleNamespace(st_size=81 * 1024 * 1024, st_mtime=st.st_mtime)
+                # Preserve size changes across appends even when the filesystem mtime is unchanged.
+                return SimpleNamespace(st_size=81 * 1024 * 1024 + st.st_size, st_mtime=st.st_mtime)
             return st
         report = {}
         with patch.object(collectors, '_gemini_files', return_value=[path, large]), patch.object(Path, 'stat', fake_stat), \
