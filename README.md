@@ -5,10 +5,11 @@
 <br clear="left">
 
 Claude Code, Codex, Gemini CLI의 토큰 사용량과 남은 한도를 내 PC에서 바로 보는 도구예요.
+DeepSeek처럼 다른 AI를 쓴 기록이 로그에 나오면 그 AI도 자동으로 목록에 추가해 따로 집계해요.
 화면 구석에 떠 있는 **한도 위젯**과 브라우저로 여는 **사용량 대시보드** 두 가지로 되어 있어요.
 
 - 설치할 패키지 없음 (Python 표준 라이브러리만 사용)
-- 사용량 기록은 내 PC에 저장돼요. 랭킹에 참가하면 닉네임, 요금제 이름, 기간별 금액만 공유 서버로 보냅니다.
+- 사용량 기록은 내 PC에 저장돼요. 랭킹에 참가하면 닉네임, 요금제 이름, 기간별 금액과 토큰 합계만 공유 서버로 보냅니다.
 - Windows와 macOS에서 돌아가요. Mac은 [Releases](https://github.com/hihikkul/token-tracker/releases/latest)의 DMG로 설치해요.
 
 ## 설치
@@ -59,7 +60,9 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 - 요일과 시간대별 사용량, 일별 모델별 토큰
 - 입력·출력·캐시 비율, 캐시 적중률, 캐시로 아낀 비용
 - 누적 비용(직전 같은 기간과 비교), 월별, 프로젝트, 모델
-- **수집할 앱 선택**에서 Claude Code, Codex, ChatGPT, Gemini CLI, Antigravity, Gemini 웹을 따로 선택해요. 선택은 위젯·대시보드·쌀먹 비율에 함께 적용돼요.
+- **수집할 앱 선택**에서 Claude Code, Codex, ChatGPT, Gemini CLI, Antigravity, Gemini 웹, 그리고 자동으로 감지된 AI를 따로 선택해요. 선택은 위젯·대시보드·쌀먹 비율·랭킹에 함께 적용돼요. 기록 수집은 계속되므로 다시 켜면 그동안의 기록도 보여요.
+- **새 AI 자동 감지**: 로그에 처음 보는 AI 모델이 나오면 그 제공사(DeepSeek, Qwen, Kimi, GLM, Grok, Mistral 등)를 목록에 자동으로 추가하고, 7일 동안 "새로 감지됨"으로 표시해요. 이름으로 제공사를 알 수 없으면 `org/모델` 형식의 org나 모델 이름의 첫 단어를 쓰고, 그것도 없으면 **Other models**로 모아요.
+- 가격표에 없는 모델은 비용에서 빠지는 대신 "가격 미확인 모델"로 토큰 양을 따로 알려 줘요.
 - 기간(7/30/90일/전체), 도구, 단위(토큰/$) 전환. 모델이나 프로젝트를 누르면 그것만 걸러 봐요.
 
 ## 쌀먹 비율
@@ -71,6 +74,7 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 - 이번 달은 달력상 이번 달 사용량 ÷ **월 구독료 전액**으로 계산해요. 오늘은 월 구독료의 1/30, 이번 주는 7/30을 사용해요. 최근 30일 차트와 별개예요.
 - Gemini CLI와 Antigravity를 함께 선택해도 Gemini 구독료는 한 번만 계산해요. ChatGPT와 Codex도 웹 항목 때문에 구독료가 추가되지 않아요.
 - 이전 계산 방식으로 보낸 랭킹 점수는 새 점수와 섞지 않고 업데이트 필요로 표시해요.
+- DeepSeek처럼 API 키로 쓰는 종량제 AI는 구독이 아니라서 배율에 넣지 않아요. 카드 아래에 **종량제 API(실제 지출)** 로 따로 보여 주고, 랭킹에도 보내지 않아요.
 - 여러 Codex 계정은 계정별 사용량·구독료·배율을 각각 표시합니다. 설정에서 계정별 요금제를 선택할 수 있으며, 같은 요금제의 서로 다른 계정도 합치지 않습니다. 계정 ID가 없는 로그나 확인된 세션 중 계정 전환 기록은 **계정 미확인**으로 표시하고 합계 배율에서 제외합니다. 전체 사용량 차트에는 그대로 포함합니다.
 
 ## 쌀숭이 랭킹
@@ -78,28 +82,35 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 대시보드 오른쪽 위 **랭킹** 버튼. 친구들과 그룹을 만들어 일일 / 주간 / 월간 쌀먹 비율을 겨뤄요. 그룹 1등이 되면 처음 들어갈 때 축하해 줘요.
 
 - *새 그룹 만들기*로 초대 코드를 받고, 친구는 *초대 코드로 참가*.
-- 서버로 가는 건 닉네임, 요금제 이름, 기간별 API 환산 금액과 구독료 몫뿐이에요. 대화 내용, 프로젝트, 모델별 기록은 보내지 않아요. 15분마다 갱신돼요.
+- 서버로 가는 건 닉네임, 요금제 이름, 기간별 API 환산 금액·구독료 몫·토큰 합계(선택한 구독 앱만)뿐이에요. 대화 내용, 프로젝트, 모델별 기록, 종량제 AI 사용량은 보내지 않아요. 15분마다 갱신돼요.
+- 전체 랭킹은 30일 넘게 갱신이 없으면 빠져요. 다시 참가하면 돼요.
 - 공유 서버는 Cloudflare Pages + D1 (`server/`)에서 운영 중이에요. 별도 서버 설치 없이 그룹을 만들거나 초대 코드로 참가하면 됩니다.
 - 서버 주소: https://token-tracker-rank.pages.dev
 - 친구에게는 **초대 링크 복사**로 복사한 공개 안내 링크를 보내세요. 친구도 트래커를 설치하고 본인 PC의 **랭킹 → 초대 코드로 참가**에서 참가해요. `127.0.0.1` 대시보드 주소는 친구에게 공유할 수 없어요.
 - 오래된 설정의 localhost 랭킹 주소는 공개 서버로 교정해요. 개발 목적으로 로컬 서버를 쓸 때만 `ranking.allow_local_server: true`를 지정하세요.
-- 별도 서버를 직접 운영하려면 `deploy_server.bat` (Mac은 `deploy_server.command`)로 본인 Cloudflare 계정에 배포할 수 있어요. Node.js와 Cloudflare 로그인이 필요합니다.
+- 별도 서버를 직접 운영하려면 `deploy_server.bat` (Mac은 `deploy_server.command`)로 본인 Cloudflare 계정에 배포할 수 있어요. Node.js와 Cloudflare 로그인이 필요합니다. 서버 코드가 바뀐 버전으로 올릴 때는 `server` 폴더에서 `npx wrangler d1 migrations apply token-tracker-rank --remote`로 데이터베이스를 먼저 갱신한 뒤 배포하세요.
 
 ## 어디서 읽나요
 
 | 도구 | 사용량 | 한도 |
 |---|---|---|
-| Claude Code | `~/.claude/projects/**/*.jsonl` | `api.anthropic.com/api/oauth/usage` (Claude Code 로그인 토큰 사용, 만료되면 갱신) |
+| Claude Code | `~/.claude/projects/**/*.jsonl` | `api.anthropic.com/api/oauth/usage` (Claude Code 로그인 토큰 사용, 만료되면 갱신. Mac 키체인 로그인은 읽기만) |
 | Codex | `~/.codex/sessions`, `archived_sessions` | 같은 로그의 `rate_limits` (네트워크 사용 안 함, 요금제별로 표시) |
 | Gemini CLI | `~/.gemini/tmp/*/chats/*.json` | Gemini CLI 로그인 정보로 Google 모델별 잔여 한도 조회 |
 | Antigravity | `~/.gemini/antigravity*`에서 토큰 수가 있는 기록만 | 실행 중인 앱의 로컬 서버에서 모델별 잔여 한도 조회 |
 | ChatGPT / Gemini 웹 | 공개 토큰 기록 인터페이스 없음 | 공개 조회 인터페이스 없음: 조회 불가 안내 |
+| DeepSeek | Claude Code·Codex 로그에 남은 DeepSeek 모델 기록 | 환경변수 `DEEPSEEK_API_KEY`가 있으면 `api.deepseek.com/user/balance`로 잔액 조회 (키는 이 주소에만 보내고 저장하지 않음) |
+| 그 밖의 AI | Claude Code·Codex 로그에 남은 모델 이름으로 자동 감지 | 없음 (한도 카드에 표시하지 않음) |
 
-- ClaudeRipple 같은 프록시로 Claude Code 안에서 GPT·Gemini·DeepSeek 등이 답한 대화는 로그에 남은 실제 모델 이름을 보고 나눠 세요. GPT(ChatGPT 구독)는 **Codex**, Gemini는 **Gemini**, 나머지는 **Other models**로 집계되고 Claude 사용량에는 들어가지 않아요.
+- ClaudeRipple 같은 프록시로 Claude Code 안에서 GPT·Gemini·DeepSeek 등이 답한 대화는 로그에 남은 실제 모델 이름을 보고 나눠 세요. GPT(ChatGPT 구독)는 **Codex**, Gemini는 **Gemini**, 그 밖의 AI는 각자 이름(예: **DeepSeek**)으로 집계되고 Claude 사용량에는 들어가지 않아요. `openai/…`, `google/…`처럼 라우터·API 키로 쓴 이름은 구독이 아니라 종량제로 따로 세요.
+- Claude Code를 DeepSeek 주소(`ANTHROPIC_BASE_URL`)에 연결해 `claude-…` 모델 이름 그대로 쓰면 로그에 Claude 이름이 남아요. 이때는 설정된 주소와 응답 모양을 보고 DeepSeek로 분류하고, DeepSeek 규칙대로 opus는 `deepseek-v4-pro`, 나머지는 `deepseek-flash` 가격으로 계산해요.
+- Codex CLI를 DeepSeek·Ollama 같은 다른 제공사에 연결해 쓴 기록도 Codex 구독이 아니라 그 AI로 집계해요.
 - claude.ai 웹·앱 대화는 PC에 토큰 기록이 남지 않아서 집계되지 않아요.
 - 웹 항목은 선택할 수 있지만 Codex/Gemini CLI 기록을 웹 사용량으로 대신 표시하지 않아요. Antigravity가 토큰 기록을 제공하지 않는 버전이면 한도만 표시돼요. Gemini CLI는 먼저 CLI에서 로그인하고, Antigravity는 앱을 실행해주세요.
 - Claude Code는 기본 30일이 지나면 로그를 지우지만, 트래커가 한 번 읽은 기록은 `usage.db`에 계속 남아요. 켜 둘수록 기록이 길어집니다.
-- 비용은 **API 정가로 환산한 추정치**예요. 구독 실제 청구액이 아닙니다. 단가는 `prices.json`에서 고칠 수 있어요 (일부 모델은 공식이 아닌 가격표 기준이라 확인을 권해요).
+- 비용은 **API 정가로 환산한 추정치**예요. 구독 실제 청구액이 아닙니다 (일부 모델은 공식이 아닌 가격표 기준이라 확인을 권해요).
+- 단가를 바꾸려면 기록 폴더(`%LOCALAPPDATA%\TokenTracker`, Mac은 `~/Library/Application Support/TokenTracker`)에 `prices.json`을 만들어 같은 형식으로 고칠 모델만 넣으세요. 기본 가격보다 우선하고, 업데이트해도 그대로 남아요. 설치 폴더의 `prices.json`은 업데이트 때 새 가격으로 바뀌어요. 형식이 잘못된 줄은 건너뛰어요.
+- DeepSeek는 피크 시간(평일 UTC 01–04시, 06–10시, 한국 시간 10–13시, 15–19시)에 두 배 가격이라 기록 시각에 맞는 단가로 계산해요. 중국 공휴일 할인은 반영하지 않아요.
 
 ## 설정
 
@@ -113,15 +124,17 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 - Windows에서 작업 표시줄에 고정할 때는 Token Tracker 기본 아이콘과 앱 실행 명령을 사용합니다. 이전 버전에서 고정한 Python 아이콘은 고정을 해제한 뒤 다시 고정하세요.
 - 고정용 바로가기는 기본 아이콘을 사용하고, 실행 중 창은 실시간 사용량 아이콘을 사용합니다.
 - `extra_paths`: 기본 위치 밖의 로그 폴더 추가. 예: `"claude": ["D:/backup/.claude/projects"]`
-- `port` (8765), `scan_interval_sec` (60), `limits_interval_sec` (300)
-- 환경변수 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_HOME`, `TOKENTRACKER_HOME`도 따라가요.
+- `port` (8765, 이미 쓰이고 있으면 다음 빈 포트. 다시 실행하면 이미 켜진 트래커의 대시보드를 열어요), `scan_interval_sec` (60), `limits_interval_sec` (300)
+- 환경변수 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_HOME`, `TOKENTRACKER_HOME`도 따라가요. `DEEPSEEK_API_KEY`가 있으면 DeepSeek 잔액을 보여 줘요.
+- 설정 파일은 한 번에 통째로 바꿔 써서 중간에 깨지지 않아요. 손으로 고치다 형식이 깨지면 `config.json.bak`의 마지막 정상 설정을 쓰고, 깨진 파일은 `config.json.broken`으로 남겨 둬요.
 
 ## 문제가 생기면
 
 `doctor.bat`을 실행하면 어떤 로그를 찾았는지, 몇 건 읽었는지, 한도 조회가 되는지 보여줘요.
 
 - Claude 한도 엔드포인트는 비공식이라 바뀌면 한도 표시가 멈출 수 있어요 (사용량 집계는 계속 됨).
-- Claude 한도는 Claude Code 로그인을 빌려 조회해요. 로그인은 몇 시간마다 갱신되고, 갱신 열쇠(refresh token)는 약 30일 동안 안 쓰면 끝나요. 트래커가 켜져 있는 동안 Claude Code와 같은 방식으로 계속 갱신해 두기 때문에, Claude Code CLI를 오래 안 써도 로그인이 유지돼요 (남은 기간이 7일 아래로 내려가면 미리 갱신).
+- Claude 한도는 Claude Code 로그인을 빌려 조회해요. 로그인은 몇 시간마다 갱신되고, 갱신 열쇠(refresh token)는 약 30일 동안 안 쓰면 끝나요. 트래커가 켜져 있는 동안 Claude Code와 같은 방식으로 계속 갱신해 두기 때문에, Claude Code CLI를 오래 안 써도 로그인이 유지돼요 (남은 기간이 7일 아래로 내려가면 미리 갱신). 갱신할 때는 Claude Code가 그사이 바꾼 내용을 지우지 않도록 파일을 다시 읽어 로그인 부분만 고쳐 써요.
+- Mac은 로그인 정보가 키체인에 있어서 트래커가 읽기만 하고 갱신하지 않아요. 위젯에 갱신이 필요하다고 뜨면 Claude Code를 한 번 열어 주세요.
 - PC를 30일 넘게 꺼 뒀거나 다른 곳에서 로그아웃해서 로그인이 끝나면, 위젯에 **Claude · Sign in**이 떠요. 누르면 터미널에서 `claude auth login`이 열리고, 로그인을 마치면 몇 분 안에 한도가 다시 보여요. 이 동작을 끄려면 설정에 `"refresh_claude_token": false`.
 
 ## 라이선스

@@ -11,9 +11,17 @@ from tracker.db import DB
 
 class MultiAccount(unittest.TestCase):
     def setUp(self):
-        env=patch.dict(os.environ,{'CLAUDERIPPLE_HOME':str(Path(__file__).parent/'no-clauderipple')})
+        temp=tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root=Path(temp.name)
+        env=patch.dict(os.environ,{'TOKENTRACKER_HOME':str(root/'data'), 'CLAUDE_CONFIG_DIR':str(root/'claude'),
+                                 'CODEX_HOME':str(root/'codex'), 'GEMINI_HOME':str(root/'gemini'),
+                                 'CLAUDERIPPLE_HOME':str(root/'ripple')})
         env.start()
         self.addCleanup(env.stop)
+        snapshots=patch('tracker.ripple.chatgpt_snapshots',return_value=[])
+        snapshots.start()
+        self.addCleanup(snapshots.stop)
         self.db=DB(':memory:')
         self.cfg={'sources':{'codex':True},'subscription_plans':{'codex':'auto'}}
 

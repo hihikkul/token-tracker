@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS records (
 );
 CREATE INDEX IF NOT EXISTS idx_records_ts ON records(ts);
 CREATE INDEX IF NOT EXISTS idx_records_src_ts ON records(source, ts);
+CREATE INDEX IF NOT EXISTS idx_records_session ON records(session);
 CREATE TABLE IF NOT EXISTS files (
     path TEXT PRIMARY KEY,
     mtime REAL,
@@ -66,6 +67,10 @@ class DB:
             cache_write = max(cache_write, excluded.cache_write),
             cache_read = max(cache_read, excluded.cache_read),
             reasoning = max(reasoning, excluded.reasoning),
+            model = CASE WHEN excluded.model IS NOT NULL AND excluded.model != ''
+                         AND (excluded.model NOT IN ('gemini', 'codex')
+                              OR model IS NULL OR model IN ('', 'gemini', 'codex'))
+                         THEN excluded.model ELSE model END,
             account = excluded.account
         """
         rows = list(rows)
@@ -77,8 +82,12 @@ class DB:
             for k in ("input", "output", "cache_write", "cache_read", "reasoning"):
                 r[k] = int(r.get(k) or 0)
         with _lock:
-            self.conn.executemany(sql, rows)
-            self.conn.commit()
+            try:
+                self.conn.executemany(sql, rows)
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
         return len(rows)
 
     # -------------------------------------------------------------- files

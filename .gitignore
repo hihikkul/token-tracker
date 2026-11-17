@@ -6,3 +6,4 @@ __pycache__/
 server/node_modules/
 server/.wrangler/
 server/pages/.wrangler/
+/token-tracker/

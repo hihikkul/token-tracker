@@ -3,7 +3,7 @@ import threading
 import time
 import traceback
 
-from . import paths, stats
+from . import paths, sources, stats
 from .collectors import scan_all
 from .db import DB
 from .limits import all_limits
@@ -13,6 +13,10 @@ class Engine:
     def __init__(self, db=None):
         self.db = db or DB()
         self.cfg = paths.load_config()
+        try:
+            sources.load(self.db)  # providers found in earlier runs are listed from the start
+        except Exception:
+            pass
         self.snapshot = {"limits": {}, "today": {}, "updated": 0, "scan": {}}
         self.lock = threading.Lock()
         self._refresh_lock = threading.Lock()
@@ -30,10 +34,20 @@ class Engine:
         except Exception:
             scan = {"error": traceback.format_exc(limit=2)}
         try:
+            new_sources = sources.refresh(self.db)  # a new AI provider in the logs joins the list
+        except Exception:
+            new_sources = []
+        try:
             lim = all_limits(self.db, force=force_limits)
         except Exception:
             lim = {}
-        snap = {"limits": lim, "today": stats.today(self.db), "updated": time.time(), "scan": scan}
+        try:
+            today = stats.today(self.db)
+        except Exception:  # e.g. a malformed price someone typed into prices.json
+            today = {}
+            scan = dict(scan, stats_error=traceback.format_exc(limit=2))
+        snap = {"limits": lim, "today": today, "updated": time.time(), "scan": scan,
+                "new_sources": new_sources}
         with self.lock:
             self.snapshot = snap
         for fn in list(self.listeners):
@@ -55,7 +69,10 @@ class Engine:
 
     def _loop(self):
         while not self._stop.is_set():
-            self.refresh()
+            try:
+                self.refresh()
+            except Exception:
+                pass  # never let one bad round stop scanning for good
             try:
                 from . import ranking
                 ranking.sync(self.db, self.snapshot.get("limits"))

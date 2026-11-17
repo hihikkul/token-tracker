@@ -1,6 +1,8 @@
 """Exercise the real Tk/Windows lifecycle; mocks cannot detect wrapper replacement."""
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from tracker import widget
@@ -12,12 +14,23 @@ class WindowsMinimize(unittest.TestCase):
         import ctypes
         from ctypes import wintypes
 
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        data = Path(temp.name)
+        for target, value in (('data_dir', data), ('config_path', data / 'config.json')):
+            isolated = patch.object(widget.paths, target, return_value=value)
+            isolated.start()
+            self.addCleanup(isolated.stop)
+        quiet = patch.object(widget.updater, 'log')
+        quiet.start()
+        self.addCleanup(quiet.stop)
+
         class Engine:
             snapshot = {'limits': {'claude': {'windows': [
                 {'label': '주간', 'used_percent': 100}]}}, 'updated': 1}
 
         cfg = {'auto_update': False, 'widget': {'taskbar': True},
-               'sources': {key: key == 'claude' for key in widget.NAMES}}
+               'sources': {key: key == 'claude' for key in widget.sources.names()}}
         with patch.object(widget.paths, 'load_config', return_value=cfg):
             bar = widget.Widget(Engine(), 'http://127.0.0.1:8765')
         user = ctypes.windll.user32

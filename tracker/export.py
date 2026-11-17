@@ -12,19 +12,19 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from . import paths
+from . import paths, sources
 from .limits import all_limits
-from .pricing import cost, price_for
+from .pricing import PEAK_SQL, cost, price_for
 
 TOK = ("input", "output", "cache_write", "cache_read")
-from .sources import NAMES as _NAMES
 
-SRC_NAME = {**_NAMES, "other": "Other models"}
+
+def _source_name(key):
+    return sources.names().get(key) or sources.display_name(key)
 
 
 def _cost(r):
-    c = cost(r["model"], **{k: r[k] or 0 for k in TOK})
-    return round(c, 4) if c is not None else None
+    return cost(r["model"], peak=r.get("peak"), **{k: r[k] or 0 for k in TOK})
 
 
 def _codex_titles():
@@ -50,28 +50,30 @@ def _codex_titles():
 def build(db, limits=None):
     """All datasets as {name: rows}; used by --export and by the local dashboard."""
     q = db.query
+    now = time.time()
     lday = "date(ts,'unixepoch','localtime')"
 
     daily = []
-    for r in q(f"SELECT {lday} AS date, source, model, SUM(input) input, SUM(output) output, "
+    for r in q(f"SELECT {lday} AS date, source, model, {PEAK_SQL} AS peak, SUM(input) input, SUM(output) output, "
                "SUM(cache_write) cache_write, SUM(cache_read) cache_read, SUM(reasoning) reasoning, "
-               "COUNT(*) calls FROM records GROUP BY date, source, model ORDER BY date"):
-        r["tool"] = SRC_NAME.get(r.pop("source"), "?")
+               "COUNT(*) calls FROM records WHERE ts<=? GROUP BY date, source, model, peak ORDER BY date", (now,)):
+        r["tool"] = _source_name(r.pop("source"))
         r["tokens"] = sum(r[k] or 0 for k in TOK)
         r["cost_usd"] = _cost(r)
         daily.append(r)
 
     proj = {}
-    for r in q("SELECT COALESCE(project,'(알 수 없음)') project, source, model, MIN(ts) first, MAX(ts) last, "
-               "SUM(input) input, SUM(output) output, SUM(cache_write) cache_write, SUM(cache_read) cache_read, "
-               "COUNT(*) calls FROM records GROUP BY project, source, model"):
+    for r in q(f"SELECT COALESCE(project,'(알 수 없음)') project, source, model, {PEAK_SQL} AS peak, "
+               "MIN(ts) first, MAX(ts) last, SUM(input) input, SUM(output) output, "
+               "SUM(cache_write) cache_write, SUM(cache_read) cache_read, "
+               "COUNT(*) calls FROM records WHERE ts<=? GROUP BY project, source, model, peak", (now,)):
         p = proj.setdefault(r["project"], {"project": r["project"], "tokens": 0, "cost_usd": 0.0, "calls": 0,
                                            "first": r["first"], "last": r["last"], "tools": set()})
         p["tokens"] += sum(r[k] or 0 for k in TOK)
         p["cost_usd"] += _cost(r) or 0
         p["calls"] += r["calls"]
         p["first"], p["last"] = min(p["first"], r["first"]), max(p["last"], r["last"])
-        p["tools"].add(SRC_NAME.get(r["source"]))
+        p["tools"].add(_source_name(r["source"]))
     projects = sorted(proj.values(), key=lambda p: -p["tokens"])
     for p in projects:
         p["cost_usd"] = round(p["cost_usd"], 2)
@@ -81,16 +83,18 @@ def build(db, limits=None):
 
     hours = q("SELECT CAST(strftime('%w',ts,'unixepoch','localtime') AS INT) weekday, "
               "CAST(strftime('%H',ts,'unixepoch','localtime') AS INT) hour, "
-              "SUM(input+output+cache_write+cache_read) tokens, COUNT(*) calls FROM records GROUP BY weekday, hour")
+              "SUM(input+output+cache_write+cache_read) tokens, COUNT(*) calls FROM records "
+              "WHERE ts<=? GROUP BY weekday, hour", (now,))
     for h in hours:
         h["weekday"] = (h["weekday"] + 6) % 7  # 0 = Monday
 
     titles = _codex_titles()
     sess = {}
-    for r in q("SELECT session, source, COALESCE(project,'') project, model, MIN(ts) start, MAX(ts) end, "
-               "SUM(input) input, SUM(output) output, SUM(cache_write) cache_write, SUM(cache_read) cache_read, "
-               "COUNT(*) calls FROM records GROUP BY session, source, model"):
-        s = sess.setdefault(r["session"], {"session": r["session"], "tool": SRC_NAME.get(r["source"]),
+    for r in q(f"SELECT session, source, COALESCE(project,'') project, model, {PEAK_SQL} AS peak, "
+               "MIN(ts) start, MAX(ts) end, SUM(input) input, SUM(output) output, "
+               "SUM(cache_write) cache_write, SUM(cache_read) cache_read, "
+               "COUNT(*) calls FROM records WHERE ts<=? GROUP BY session, source, model, peak", (now,)):
+        s = sess.setdefault((r["session"], r["source"]), {"session": r["session"], "tool": _source_name(r["source"]),
                                            "project": r["project"], "title": titles.get(r["session"], ""),
                                            "start": r["start"], "end": r["end"], "tokens": 0, "cost_usd": 0.0,
                                            "calls": 0, "models": set()})
@@ -115,7 +119,7 @@ def build(db, limits=None):
         for a in accts:
             for w in a["windows"]:
                 limit_rows.append({
-                    "tool": SRC_NAME[src], "account": a.get("plan") or "이전 기록",
+                    "tool": _source_name(src), "account": a.get("plan") or "이전 기록",
                     "window": w["label"], "used_pct": round(w["used_percent"], 1),
                     "left_pct": round(100 - w["used_percent"], 1),
                     "resets_at": datetime.fromtimestamp(w["resets_at"]).strftime("%Y-%m-%d %H:%M") if w.get("resets_at") else "",
@@ -125,9 +129,10 @@ def build(db, limits=None):
     # finer grain for the local dashboard's model / project filters
     detail = []
     for r in q(f"SELECT {lday} AS date, source, model, COALESCE(project,'(알 수 없음)') project, "
-               "SUM(input) input, SUM(output) output, SUM(cache_write) cache_write, SUM(cache_read) cache_read, "
-               "COUNT(*) calls FROM records GROUP BY date, source, model, project"):
-        r["tool"] = SRC_NAME.get(r.pop("source"), "?")
+               f"{PEAK_SQL} AS peak, SUM(input) input, SUM(output) output, "
+               "SUM(cache_write) cache_write, SUM(cache_read) cache_read, "
+               "COUNT(*) calls FROM records WHERE ts<=? GROUP BY date, source, model, project, peak", (now,)):
+        r["tool"] = _source_name(r.pop("source"))
         r["tokens"] = sum(r[k] or 0 for k in TOK)
         r["cost_usd"] = _cost(r)
         detail.append(r)
@@ -135,16 +140,23 @@ def build(db, limits=None):
                      "CAST(strftime('%H',ts,'unixepoch','localtime') AS INT) hour, source, model, "
                      "COALESCE(project,'(알 수 없음)') project, {lday} AS date, "
                      "SUM(input+output+cache_write+cache_read) tokens, COUNT(*) calls FROM records "
-                     "GROUP BY weekday, hour, source, model, project, date".replace("{lday}", lday))
+                     "WHERE ts<=? GROUP BY weekday, hour, source, model, project, date".replace("{lday}", lday), (now,))
     for h in hours_detail:
         h["weekday"] = (h["weekday"] + 6) % 7
-        h["tool"] = SRC_NAME.get(h.pop("source"), "?")
+        h["tool"] = _source_name(h.pop("source"))
     # per-model list prices, so the dashboard can work out what cache reads saved
     prices = {m: p for m in {r["model"] for r in detail} if (p := price_for(m))}
     for srow in sessions:
         srow["projects"] = srow["project"]
+    unpriced = []
+    for r in q("SELECT model, source, SUM(input+output+cache_write+cache_read) tokens FROM records "
+               "WHERE ts>=? AND ts<=? GROUP BY model, source HAVING tokens>0 ORDER BY tokens DESC",
+               (now - 90 * 86400, now)):
+        if price_for(r["model"]) is None:
+            unpriced.append({"model": r["model"], "tool": _source_name(r["source"]), "tokens": r["tokens"]})
     return {"daily": daily, "projects": projects, "hours": hours, "sessions": sessions, "limits": limit_rows,
-            "daily_detail": detail, "hours_detail": hours_detail, "prices": prices, "limits_raw": _limits_raw(lim)}
+            "daily_detail": detail, "hours_detail": hours_detail, "prices": prices, "limits_raw": _limits_raw(lim),
+            "unpriced": unpriced}
 
 
 def _limits_raw(lim):
@@ -153,7 +165,7 @@ def _limits_raw(lim):
     for src, l in lim.items():
         accts = l.get("accounts") or ([{"plan": l.get("plan"), "windows": l.get("windows", []),
                                         "fetched_at": l.get("fetched_at")}] if l.get("windows") else [])
-        out.append({"tool": SRC_NAME[src], "source": src, "status": l.get("status"), "message": l.get("message", ""),
+        out.append({"tool": _source_name(src), "source": src, "status": l.get("status"), "message": l.get("message", ""),
                     "plan": l.get("plan"), "accounts": accts})
     return out
 

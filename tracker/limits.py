@@ -11,15 +11,18 @@ Codex  : read from the rate_limits block Codex writes into its session logs (no 
 Gemini : no usage-limit source available.
 """
 import json
+import math
 import os
 import time
 import urllib.error
 import urllib.request
 
-from . import paths
+from . import paths, tls
 from .collectors import parse_ts, same_quota
 
 CLAUDE_URL = "https://api.anthropic.com/api/oauth/usage"
+DEEPSEEK_URL = "https://api.deepseek.com/user/balance"
+CLAUDE_KEYCHAIN_RELOGIN = "Open Claude Code once to renew the sign-in (macOS keychain)"
 # Claude Code's public OAuth client (same values the Claude Code CLI uses to refresh its login)
 CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
@@ -37,16 +40,85 @@ def _read_oauth(cred_file):
         return {}
 
 
+_OAUTH_FIELDS = ("accessToken", "refreshToken", "expiresAt", "refreshTokenExpiresAt", "scopes")
+# A renewed login that could not be written to the credentials file (locked, disk full...).
+# The old refresh token is already spent by then, so the new pair is kept here and saved on a
+# later round; reading the file again would hand back the spent token and end the sign-in.
+# Memory only: a second copy of the secret on disk is avoided on purpose.
+_pending = {}  # str(credentials file) -> {"base": refresh token the file holds, "oauth": fields}
+
+
+def _current_oauth(cred_file):
+    """(login to use, refresh token in the file): the file's login, or a renewed one that is
+    still waiting to be written over it."""
+    oauth = _read_oauth(cred_file)
+    pending = _pending.get(str(cred_file))
+    if pending:
+        if oauth.get("refreshToken") == pending["base"]:
+            return {**oauth, **pending["oauth"]}, pending["base"]
+        _pending.pop(str(cred_file), None)  # Claude Code saved a newer login meanwhile
+    return oauth, oauth.get("refreshToken")
+
+
+def _save_oauth(cred_file, fields, base):
+    """Write renewed login fields into the credentials file as it is right now.
+
+    The file is read again just before writing, so whatever Claude Code changed while the
+    refresh was in flight (MCP logins, other settings) is kept. Returns "saved", "superseded"
+    (Claude Code renewed the login itself meanwhile, and its file wins) or "failed"."""
+    try:
+        raw = json.loads(cred_file.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("not a JSON object")
+    except (OSError, ValueError):
+        return "failed"
+    current = raw.get("claudeAiOauth") or {}
+    if current.get("refreshToken") != base:
+        return "superseded"
+    raw["claudeAiOauth"] = {**current, **fields}
+    tmp = cred_file.with_name(cred_file.name + ".tokentracker.tmp")
+    try:
+        try:
+            mode = (os.stat(cred_file).st_mode & 0o777) | 0o200  # same owner-only mode as the file
+        except OSError:
+            mode = 0o600
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode), "w", encoding="utf-8") as f:
+            f.write(json.dumps(raw))
+        for attempt in range(5):
+            try:
+                os.replace(tmp, cred_file)
+                return "saved"
+            except PermissionError:  # Windows: Claude Code has the file open this instant
+                if attempt == 4:
+                    raise
+                time.sleep(0.2)
+    except OSError:
+        return "failed"
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _flush_pending(cred_file):
+    """Retry writing a renewed login that an earlier round could not save."""
+    pending = _pending.get(str(cred_file))
+    if pending and _save_oauth(cred_file, pending["oauth"], pending["base"]) != "failed":
+        _pending.pop(str(cred_file), None)
+
+
 def _refresh_claude(cred_file, db):
     """Refresh an expired Claude Code login and write it back. Returns (oauth, error)."""
     now = time.time()
     if now - (db.get_kv("claude_refresh_failed_at") or 0) < REFRESH_RETRY_SEC:
         return None, "recent_failure"
-    try:
-        raw = json.loads(cred_file.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None, "unreadable"
-    oauth = raw.get("claudeAiOauth") or {}
+    key = str(cred_file)
+    oauth, base = _current_oauth(cred_file)
     rt = oauth.get("refreshToken")
     if not rt:
         return None, "no_refresh_token"
@@ -62,7 +134,8 @@ def _refresh_claude(cred_file, db):
     except urllib.error.HTTPError as e:
         # Claude Code may have refreshed (and so replaced the refresh token) at the same moment
         fresh = _read_oauth(cred_file)
-        if fresh.get("refreshToken") and fresh.get("refreshToken") != rt:
+        if fresh.get("refreshToken") and fresh.get("refreshToken") not in (rt, base):
+            _pending.pop(key, None)
             return fresh, None
         db.set_kv("claude_refresh_failed_at", now)
         return None, ("relogin" if e.code in (400, 401, 403) else f"http_{e.code}")
@@ -83,14 +156,17 @@ def _refresh_claude(cred_file, db):
         oauth["refreshTokenExpiresAt"] = int((now + 30 * 86400) * 1000)
     if isinstance(data.get("scope"), str) and data["scope"].strip():
         oauth["scopes"] = data["scope"].split()
-    raw["claudeAiOauth"] = oauth
-    tmp = cred_file.with_name(cred_file.name + ".tokentracker.tmp")
-    try:
-        tmp.write_text(json.dumps(raw), encoding="utf-8")
-        os.replace(tmp, cred_file)
-    except OSError:
+    fields = {k: oauth[k] for k in _OAUTH_FIELDS if k in oauth}
+    saved = _save_oauth(cred_file, fields, base)
+    if saved == "superseded":
+        _pending.pop(key, None)
+        fresh = _read_oauth(cred_file)
+        return (fresh, None) if fresh.get("accessToken") else (oauth, None)
+    if saved == "failed":
         # the new refresh token must not be lost, or Claude Code would need a new login
+        _pending[key] = {"base": base, "oauth": fields}
         return oauth, "not_saved"
+    _pending.pop(key, None)
     db.set_kv("claude_refresh_failed_at", 0)
     return oauth, None
 
@@ -153,10 +229,8 @@ def fetch_claude(db, force=False):
     if keychain is not None:
         oauth = keychain
     else:
-        try:
-            oauth = json.loads(cred_file.read_text(encoding="utf-8")).get("claudeAiOauth") or {}
-        except (OSError, ValueError):
-            oauth = {}
+        _flush_pending(cred_file)
+        oauth = _current_oauth(cred_file)[0]
     token = oauth.get("accessToken")
     sub = (oauth.get("subscriptionType") or "").lower()
     if sub:
@@ -184,7 +258,9 @@ def fetch_claude(db, force=False):
     if not token:
         result.update(status="no_credentials", message="No OAuth token (API key login?)")
     elif exp and exp / 1000 < now:
-        if refresh_note == "relogin" or (rt_exp and rt_exp / 1000 < now):
+        if keychain is not None:
+            result.update(status="expired", message=CLAUDE_KEYCHAIN_RELOGIN)
+        elif refresh_note == "relogin" or (rt_exp and rt_exp / 1000 < now):
             result.update(status="relogin", message="Claude sign-in ended. Right-click → Sign in to Claude")
         else:
             msg = {"offline": "Token refresh failed (check your connection)"}.get(
@@ -201,6 +277,7 @@ def fetch_claude(db, force=False):
                 new, err = _refresh_claude(cred_file, db) if can_refresh else (None, "relogin")
                 if not new:
                     raise _Relogin(err)
+                refresh_note = err or refresh_note
                 data = _get_usage(new["accessToken"])
             windows = []
             for key, v in data.items():
@@ -218,7 +295,9 @@ def fetch_claude(db, force=False):
                 result["extra"] = {k: extra.get(k) for k in
                                    ("monthly_limit", "used_credits", "utilization")}
         except _Relogin as e:
-            if str(e) == "relogin":
+            if keychain is not None:
+                result.update(status="relogin", message=CLAUDE_KEYCHAIN_RELOGIN)
+            elif str(e) == "relogin":
                 result.update(status="relogin", message="Claude sign-in ended. Right-click → Sign in to Claude")
             else:
                 result.update(status="auth", message="Couldn't renew the Claude sign-in. Retrying later")
@@ -232,6 +311,8 @@ def fetch_claude(db, force=False):
                 result.update(status="error", message=f"HTTP {e.code}")
         except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
             result.update(status="offline", message=f"Connection failed: {getattr(e, 'reason', e)}")
+    if refresh_note == "not_saved" and result["status"] == "ok" and str(cred_file) in _pending:
+        result["message"] = "Renewed Claude sign-in could not be saved yet. Retrying"
     db.set_kv("claude_limits", result)
     return result
 
@@ -320,6 +401,71 @@ def codex_limits(db):
     return out
 
 
+class _NoBalanceRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Never forward the API key to a redirect target, even on the same host.
+        return None
+
+
+def _deepseek_balance(data):
+    if not isinstance(data, dict) or not isinstance(data.get('is_available'), bool):
+        raise ValueError('invalid balance response')
+    infos = data.get('balance_infos')
+    if not isinstance(infos, list):
+        raise ValueError('invalid balance list')
+    balance = []
+    for info in infos:
+        if not isinstance(info, dict) or info.get('currency') not in ('USD', 'CNY'):
+            raise ValueError('invalid balance currency')
+        row = {'currency': info['currency']}
+        for dest, src in (('total', 'total_balance'), ('granted', 'granted_balance'),
+                          ('topped_up', 'topped_up_balance')):
+            value = info.get(src)
+            if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+                raise ValueError('invalid balance amount')
+            row[dest] = float(value)
+            if not math.isfinite(row[dest]):
+                raise ValueError('invalid balance amount')
+        balance.append(row)
+    return balance
+
+
+def fetch_deepseek(db, force=False):
+    key = os.environ.get('DEEPSEEK_API_KEY')
+    if not key:
+        return None
+    cached = db.get_kv('deepseek_limits') or {}
+    now = time.time()
+    min_gap = paths.load_config().get('limits_interval_sec', 300)
+    if not force and now - cached.get('checked_at', 0) < min_gap:
+        return cached
+    result = {'source': 'deepseek', 'status': 'ok', 'message': '', 'checked_at': now,
+              'windows': [], 'available': cached.get('available', False),
+              'balance': cached.get('balance', [])}
+    try:
+        request = urllib.request.Request(DEEPSEEK_URL, headers={
+            'Authorization': 'Bearer ' + key, 'Accept': 'application/json',
+            'User-Agent': 'token-tracker'})
+        # its own opener (no redirects), so it adds the bundled roots itself
+        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=tls.context()), _NoBalanceRedirect())
+        with opener.open(request, timeout=15) as response:
+            data = json.loads(response.read().decode('utf-8'))
+        balance = _deepseek_balance(data)
+        result.update(available=data['is_available'], balance=balance)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            result.update(status='auth', message='Check the DeepSeek API key')
+        else:
+            result.update(status='error', message=f'HTTP {e.code}')
+        e.close()
+    except (urllib.error.URLError, TimeoutError, OSError):
+        result.update(status='offline', message='Could not fetch DeepSeek balance (showing cached values)')
+    except (ValueError, OverflowError):
+        result.update(status='error', message='Invalid DeepSeek balance response')
+    db.set_kv('deepseek_limits', result)
+    return result
+
+
 def all_limits(db, force=False):
     from .sources import enabled
     from .google_limits import fetch
@@ -334,10 +480,12 @@ def all_limits(db, force=False):
         try:
             if source in providers:
                 out[source] = providers[source]()
-            else:
+            elif source in ('chatgpt', 'gemini_web'):
                 out[source] = {'source': source, 'windows': [], 'status': 'unsupported',
                     'message': 'Web token usage and model quotas cannot be fetched automatically. CLI usage is separate.'}
         except Exception:
             out[source] = {'source': source, 'windows': [], 'status': 'error',
                            'message': 'Could not fetch limits for this app'}
+    if os.environ.get('DEEPSEEK_API_KEY'):
+        out['deepseek'] = fetch_deepseek(db, force=force)
     return out

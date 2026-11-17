@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DashboardLoadsRankingsTogether(unittest.TestCase):
-    def test_forced_sync_that_waited_for_another_sends_nothing(self):
+    def test_forced_mutation_that_waited_for_another_still_uploads(self):
         cfg = {'ranking_groups': [{'code': 'AAAA-BBBB', 'token': 'a', 'nick': 'x'}],
                'ranking_global': {'token': 'g', 'nick': 'y'}}
         entered, release, waiting = threading.Event(), threading.Event(), threading.Event()
@@ -40,8 +40,8 @@ class DashboardLoadsRankingsTogether(unittest.TestCase):
             self.assertTrue(waiting.wait(5))
             release.set()
             self.assertTrue(first.result(timeout=5))
-            self.assertFalse(other.result(timeout=5))
-        self.assertEqual(remote.call_count, 2)
+            self.assertTrue(other.result(timeout=5))
+        self.assertEqual(remote.call_count, 4)
 
 
 class InviteCode(unittest.TestCase):

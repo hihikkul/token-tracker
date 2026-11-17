@@ -38,7 +38,12 @@ class Isolated(unittest.TestCase):
         self.ripple_home = self.root / "ripple"
         self.ripple_home.mkdir()
         os.environ.update(TOKENTRACKER_HOME=str(self.root / "data"), CLAUDE_CONFIG_DIR=str(self.root / "claude"),
-                          CODEX_HOME=str(self.root / "codex"), CLAUDERIPPLE_HOME=str(self.ripple_home))
+                          CODEX_HOME=str(self.root / "codex"), GEMINI_HOME=str(self.root / "gemini"),
+                          CLAUDERIPPLE_HOME=str(self.ripple_home))
+        for mock in (patch('tracker.ripple.active_account', return_value=None),
+                     patch('tracker.ripple.chatgpt_snapshots', return_value=[])):
+            mock.start()
+            self.addCleanup(mock.stop)
         self.db = DB(":memory:")
         self.addCleanup(self.db.conn.close)
         self.transcript = self.root / "claude" / "projects" / "C--work" / "s.jsonl"

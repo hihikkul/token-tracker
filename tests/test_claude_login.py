@@ -25,13 +25,19 @@ class _Server(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(obj).encode())
 
     def do_POST(self):
-        self.rfile.read(int(self.headers["Content-Length"]))
-        if self.mode.get("reject"):
+        sent = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["refresh_token"]
+        reused = sent in self.mode.get("seen", [])  # refresh tokens are single-use when "rotate"
+        self.mode.setdefault("seen", []).append(sent)
+        if self.mode.get("reject") or (self.mode.get("rotate") and reused):
             if self.mode.get("race"):
                 self.mode["race"]()
             return self._send(400, {"error": "invalid_grant"})
-        self._send(200, {"access_token": "new", "refresh_token": "r2", "expires_in": 28800,
-                         "refresh_token_expires_in": 2592000, "scope": "user:inference user:profile"})
+        if self.mode.get("during"):  # Claude Code writes its file while this refresh is in flight
+            self.mode["during"]()
+        n = len(self.mode["seen"]) + 1
+        self._send(200, {"access_token": f"new{n - 1}" if n > 2 else "new", "refresh_token": f"r{n}",
+                         "expires_in": 28800, "refresh_token_expires_in": 2592000,
+                         "scope": "user:inference user:profile"})
 
     def do_GET(self):
         if self.headers["Authorization"].split()[1] in self.mode.get("revoked", ()):
@@ -85,6 +91,7 @@ class ClaudeLogin(unittest.TestCase):
 
     def setUp(self):
         self.mode = {}
+        getattr(self.limits, "_pending", {}).clear()
 
     def test_expired_access_token_is_renewed_with_its_expiry_fields(self):
         self.write(expiresAt=int((time.time() - 60) * 1000))
@@ -118,6 +125,58 @@ class ClaudeLogin(unittest.TestCase):
         r, o, _ = self.fetch()
         self.assertEqual(r["status"], "ok")
         self.assertEqual(o["refreshToken"], "r9")
+
+    def test_unsaved_renewal_is_kept_and_saved_later(self):
+        # The refresh spends r1. If the file cannot be replaced right then, the next round must
+        # use r2 from memory (never r1 again) and write it once the file is free.
+        from unittest.mock import patch
+        self.write(expiresAt=int((time.time() - 60) * 1000))
+        self.mode["rotate"] = True
+        real_replace = os.replace
+
+        def locked(src, dst):
+            if Path(dst) == self.cred:
+                raise PermissionError("in use")
+            return real_replace(src, dst)
+
+        with patch.object(self.limits.os, "replace", side_effect=locked):
+            r, o, _ = self.fetch()
+        self.assertEqual(r["status"], "ok")
+        self.assertIn("could not be saved", r["message"])
+        self.assertEqual(o["refreshToken"], "r1")  # file untouched while locked
+        r, o, raw = self.fetch()
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual((o["accessToken"], o["refreshToken"]), ("new", "r2"))
+        self.assertEqual(raw["mcpOAuth"], {"keep": 1})
+        self.assertEqual(self.mode["seen"], ["r1"])  # the spent token was not sent again
+        self.assertEqual(self.limits._pending, {})
+
+    def test_changes_made_during_refresh_are_kept(self):
+        self.write(expiresAt=int((time.time() - 60) * 1000))
+
+        def claude_code_adds_mcp_login():
+            raw = json.loads(self.cred.read_text())
+            raw["mcpOAuth"] = {"keep": 1, "added": 2}
+            self.cred.write_text(json.dumps(raw))
+
+        self.mode["during"] = claude_code_adds_mcp_login
+        r, o, raw = self.fetch()
+        self.assertEqual(o["refreshToken"], "r2")
+        self.assertEqual(raw["mcpOAuth"], {"keep": 1, "added": 2})
+
+    def test_claude_code_renewing_during_refresh_wins(self):
+        self.write(expiresAt=int((time.time() - 60) * 1000))
+        self.mode["during"] = lambda: self.write(accessToken="cc", refreshToken="r9")
+        r, o, _ = self.fetch()
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual((o["accessToken"], o["refreshToken"]), ("cc", "r9"))
+
+    @unittest.skipIf(os.name == "nt", "file modes are POSIX only")
+    def test_private_file_mode_is_kept(self):
+        self.write(expiresAt=int((time.time() - 60) * 1000))
+        os.chmod(self.cred, 0o600)
+        self.fetch()
+        self.assertEqual(os.stat(self.cred).st_mode & 0o777, 0o600)
 
 
 if __name__ == "__main__":

@@ -1,17 +1,24 @@
 """Aggregations for the dashboard and widget. Dates are in the machine's local time."""
 import time
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
-from .pricing import cost
+from . import sources as source_registry
+from .pricing import PEAK_SQL, cost
 
-SOURCES = ("claude", "codex", "gemini")
 TOK = ("input", "output", "cache_write", "cache_read")
 
 
-def _local_midnight(days_ago=0):
-    d = datetime.combine(date.today() - timedelta(days=days_ago), datetime.min.time())
+def _local_midnight(days_ago=0, now=None):
+    today = datetime.fromtimestamp(time.time() if now is None else now).date()
+    d = datetime.combine(today - timedelta(days=days_ago), datetime.min.time())
     return int(d.timestamp())
+
+
+def _sources(selected=None):
+    names = source_registry.names()
+    names.setdefault(source_registry.OTHER, source_registry.display_name(source_registry.OTHER))
+    return list(names) if selected is None else list(dict.fromkeys(s for s in selected if s in names))
 
 
 def _sum_sql():
@@ -23,20 +30,24 @@ def _total(r):
 
 
 def _cost(r):
-    c = cost(r.get("model"), **{k: int(r.get(k) or 0) for k in TOK})
+    c = cost(r.get("model"), peak=r.get("peak"), **{k: int(r.get(k) or 0) for k in TOK})
     return c or 0.0
 
 
 def _priced(r):
-    return cost(r.get("model"), input=1) is not None
+    return cost(r.get("model"), input=1, peak=r.get("peak")) is not None
 
 
-def today(db):
-    """Small summary for the widget."""
-    since = _local_midnight(0)
-    rows = db.query(f"SELECT source, model, {_sum_sql()} FROM records WHERE ts>=? "
-                    "GROUP BY source, model", (since,))
-    out = {s: {"tokens": 0, "cost": 0.0} for s in SOURCES}
+def today(db, sources=None, now=None):
+    """Small summary for the widget, or the dashboard's selected products."""
+    now = time.time() if now is None else now
+    selected = _sources(sources)
+    ph = ",".join("?" * len(selected)) or "NULL"
+    since = _local_midnight(0, now)
+    rows = db.query(f"SELECT source, model, {PEAK_SQL} AS peak, {_sum_sql()} "
+                    f"FROM records WHERE ts>=? AND ts<=? AND source IN ({ph}) "
+                    "GROUP BY source, model, peak", (since, now, *selected))
+    out = {s: {"tokens": 0, "cost": 0.0} for s in selected}
     for r in rows:
         o = out.setdefault(r["source"], {"tokens": 0, "cost": 0.0})
         o["tokens"] += _total(r)
@@ -47,20 +58,21 @@ def today(db):
 
 
 def dashboard(db, days=30, sources=None):
-    sources = [s for s in (sources or SOURCES) if s in SOURCES] or list(SOURCES)
-    ph = ",".join("?" * len(sources))
-    since = _local_midnight(days - 1)
-    base = f"FROM records WHERE ts>=? AND source IN ({ph})"
-    args = (since, *sources)
+    now = time.time()
+    sources = _sources(sources)
+    ph = ",".join("?" * len(sources)) or "NULL"
+    since = _local_midnight(days - 1, now)
+    base = f"FROM records WHERE ts>=? AND ts<=? AND source IN ({ph})"
+    args = (since, now, *sources)
     lday = "date(ts,'unixepoch','localtime')"
 
     # ---- daily x source x model (cost needs the model)
-    daily = defaultdict(lambda: {s: {"tokens": 0, "cost": 0.0} for s in SOURCES})
+    daily = defaultdict(lambda: {s: {"tokens": 0, "cost": 0.0} for s in sources})
     totals = {"tokens": 0, "cost": 0.0, "input": 0, "output": 0, "cache_write": 0,
               "cache_read": 0, "reasoning": 0, "calls": 0, "unpriced_tokens": 0}
-    by_source = {s: {"tokens": 0, "cost": 0.0, "calls": 0} for s in SOURCES}
-    for r in db.query(f"SELECT {lday} AS d, source, model, {_sum_sql()} {base} "
-                      "GROUP BY d, source, model", args):
+    by_source = {s: {"tokens": 0, "cost": 0.0, "calls": 0} for s in sources}
+    for r in db.query(f"SELECT {lday} AS d, source, model, {PEAK_SQL} AS peak, {_sum_sql()} {base} "
+                      "GROUP BY d, source, model, peak", args):
         t, c = _total(r), _cost(r)
         daily[r["d"]][r["source"]]["tokens"] += t
         daily[r["d"]][r["source"]]["cost"] += c
@@ -73,16 +85,23 @@ def dashboard(db, days=30, sources=None):
             totals[k] += int(r[k] or 0)
         if not _priced(r):
             totals["unpriced_tokens"] += t
-    day_list = [(date.today() - timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
-    daily_out = [{"date": d, **{s: daily[d][s] for s in SOURCES}} for d in day_list]
+    local_today = datetime.fromtimestamp(now).date()
+    day_list = [(local_today - timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+    daily_out = [{"date": d, **{s: daily[d][s] for s in sources}} for d in day_list]
 
     # ---- models
-    models = []
-    for r in db.query(f"SELECT source, model, {_sum_sql()} {base} GROUP BY source, model", args):
-        models.append({"source": r["source"], "model": r["model"], "tokens": _total(r),
-                       "cost": _cost(r) if _priced(r) else None, "calls": r["calls"],
-                       "cache_read": r["cache_read"], "output": r["output"]})
-    models.sort(key=lambda m: -m["tokens"])
+    by_model = {}
+    for r in db.query(f"SELECT source, model, {PEAK_SQL} AS peak, {_sum_sql()} {base} "
+                      "GROUP BY source, model, peak", args):
+        m = by_model.setdefault((r["source"], r["model"]), {
+            "source": r["source"], "model": r["model"], "tokens": 0,
+            "cost": 0.0 if _priced(r) else None, "calls": 0, "cache_read": 0, "output": 0})
+        m["tokens"] += _total(r)
+        if m["cost"] is not None:
+            m["cost"] += _cost(r)
+        for k in ("calls", "cache_read", "output"):
+            m[k] += int(r[k] or 0)
+    models = sorted(by_model.values(), key=lambda m: -m["tokens"])
 
     # ---- weekday x hour (0=Mon)
     hours = [[0] * 24 for _ in range(7)]
@@ -94,7 +113,7 @@ def dashboard(db, days=30, sources=None):
     # ---- projects
     proj = defaultdict(lambda: {"tokens": 0, "cost": 0.0, "sources": set(), "last": 0})
     for r in db.query(f"SELECT COALESCE(project,'(알 수 없음)') AS p, source, model, MAX(ts) AS last, "
-                      f"{_sum_sql()} {base} GROUP BY p, source, model", args):
+                      f"{PEAK_SQL} AS peak, {_sum_sql()} {base} GROUP BY p, source, model, peak", args):
         p = proj[r["p"]]
         p["tokens"] += _total(r)
         p["cost"] += _cost(r)
@@ -107,8 +126,8 @@ def dashboard(db, days=30, sources=None):
     sess = defaultdict(lambda: {"tokens": 0, "cost": 0.0, "start": 1e18, "end": 0,
                                 "models": set(), "calls": 0})
     for r in db.query(f"SELECT session, source, COALESCE(project,'') AS project, model, "
-                      f"MIN(ts) AS start, MAX(ts) AS end, {_sum_sql()} {base} "
-                      "GROUP BY session, source, model", args):
+                      f"MIN(ts) AS start, MAX(ts) AS end, {PEAK_SQL} AS peak, {_sum_sql()} {base} "
+                      "GROUP BY session, source, project, model, peak", args):
         s = sess[(r["session"], r["source"], r["project"])]
         s["tokens"] += _total(r)
         s["cost"] += _cost(r)
@@ -122,18 +141,18 @@ def dashboard(db, days=30, sources=None):
 
     # ---- yearly heatmap (always 365 days, selected sources)
     year = {r["d"]: _total(r) for r in db.query(
-        f"SELECT {lday} AS d, {_sum_sql()} FROM records WHERE ts>=? AND source IN ({ph}) GROUP BY d",
-        (_local_midnight(370), *sources))}
+        f"SELECT {lday} AS d, {_sum_sql()} FROM records WHERE ts>=? AND ts<=? "
+        f"AND source IN ({ph}) GROUP BY d", (_local_midnight(370, now), now, *sources))}
 
     denom = totals["input"] + totals["cache_read"] + totals["cache_write"]
-    active_days = sum(1 for d in daily_out if any(d[s]["tokens"] for s in SOURCES))
+    active_days = sum(1 for d in daily_out if any(d[s]["tokens"] for s in sources))
     return {
-        "generated_at": time.time(),
+        "generated_at": now,
         "days": days,
         "sources": sources,
         "totals": {**totals, "cache_hit": (totals["cache_read"] / denom) if denom else 0,
                    "active_days": active_days},
-        "today": today(db),
+        "today": today(db, sources=sources, now=now),
         "by_source": by_source,
         "daily": daily_out,
         "models": models,
@@ -141,13 +160,16 @@ def dashboard(db, days=30, sources=None):
         "projects": projects,
         "sessions": sessions,
         "year": year,
-        "coverage": coverage(db),
+        "coverage": coverage(db, now=now, sources=sources),
     }
 
 
-def coverage(db):
+def coverage(db, now=None, sources=None):
+    now = time.time() if now is None else now
+    selected = _sources(sources)
+    ph = ",".join("?" * len(selected)) or "NULL"
     out = {}
     for r in db.query("SELECT source, COUNT(*) AS n, MIN(ts) AS first, MAX(ts) AS last "
-                      "FROM records GROUP BY source"):
+                      f"FROM records WHERE ts<=? AND source IN ({ph}) GROUP BY source", (now, *selected)):
         out[r["source"]] = r
     return out
