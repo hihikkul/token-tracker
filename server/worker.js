@@ -20,6 +20,18 @@ const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 const MAX_MEMBERS = 50;
 const GLOBAL = 'GLOBAL';   // the public ranking's built-in group (no member limit)
 const TOP = 100;
+const MAX_BODY = 8192;
+const TOO_LARGE = Symbol('body too large');
+const MIN_SUB = 0.01;
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+const RETENTION = 30 * DAY;
+const QUOTAS = { create: [5, 20], join: [30, 100], global_join: [3, 10] };
+// Zero timestamps are legacy/unknown, not evidence of inactivity.
+const LAST_ACTIVE = 'COALESCE(NULLIF((SELECT MAX(updated) FROM scores WHERE member_id = members.id), 0), joined)';
+const ACTIVE_GLOBAL = '(COALESCE(NULLIF(s.updated, 0), m.joined) = 0 OR COALESCE(NULLIF(s.updated, 0), m.joined) >= ?)';
+const VALID_RATIO = 's.api > 0 AND s.api < 1000000 AND s.sub >= 0.01 AND s.sub < 1000000';
+const changes = (result) => Number(result.meta?.changes ?? result.changes);
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -63,14 +75,70 @@ const cleanNum = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 &
 const cleanCount = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e15 ? v : null);
 const cleanWindow = (v) => (typeof v === 'string' && /^\d{4}-(W\d{2}|\d{2}(-\d{2})?)$/.test(v) ? v : null);
 
+function validScore(api, sub) {
+  if (cleanNum(api) === null || cleanNum(sub) === null) return false;
+  // Keep unknown/free plans (sub = 0), but never rank them.
+  return sub === 0 || ((api === 0 || sub >= MIN_SUB) && Number.isFinite(api / sub));
+}
+
 async function readJson(req) {
+  if (Number(req.headers.get('content-length')) > MAX_BODY) return TOO_LARGE;
+  if (!req.body) return {};
+  const reader = req.body.getReader();
   try {
-    const text = await req.text();
-    if (text.length > 8192) return null;
+    const decoder = new TextDecoder();
+    let size = 0, text = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_BODY) {
+        void reader.cancel().catch(() => {});
+        return TOO_LARGE;
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
     return JSON.parse(text || '{}');
   } catch {
     return null;
+  } finally {
+    reader.releaseLock();
   }
+}
+
+async function allowEnrollment(req, env, action) {
+  const now = Date.now(), hour = Math.floor(now / HOUR), day = Math.floor(now / DAY);
+  const [hourLimit, dayLimit] = QUOTAS[action];
+  // Cloudflare supplies this header. Missing headers share one restrictive fallback bucket.
+  const client = await sha256('ranking-client:' + (req.headers.get('CF-Connecting-IP') || 'unknown'));
+  const result = await env.DB.prepare(
+    'INSERT INTO enrollment_limits (client_hash, action, hour, day, hour_count, day_count, expires) VALUES (?, ?, ?, ?, 1, 1, ?) ' +
+    'ON CONFLICT(client_hash, action) DO UPDATE SET hour = excluded.hour, day = excluded.day, ' +
+    'hour_count = CASE WHEN hour = excluded.hour THEN hour_count + 1 ELSE 1 END, ' +
+    'day_count = CASE WHEN day = excluded.day THEN day_count + 1 ELSE 1 END, expires = excluded.expires ' +
+    'WHERE (hour != excluded.hour OR hour_count < ?) AND (day != excluded.day OR day_count < ?)',
+  ).bind(client, action, hour, day, (day + 1) * DAY, hourLimit, dayLimit).run();
+  return changes(result) === 1;
+}
+
+function rateLimited() {
+  const response = err(429, 'too many enrollments; try again later');
+  response.headers.set('retry-after', '3600');
+  return response;
+}
+
+async function cleanup(env) {
+  const now = Date.now(), cutoff = now - RETENTION;
+  const stale = `SELECT id FROM members WHERE group_code = ? AND ${LAST_ACTIVE} > 0 AND ${LAST_ACTIVE} < ?`;
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM members WHERE id IN (${stale})`).bind(GLOBAL, cutoff),
+    env.DB.prepare('DELETE FROM scores WHERE NOT EXISTS (SELECT 1 FROM members WHERE id = scores.member_id)'),
+    // A grace period avoids racing the creator's first join.
+    env.DB.prepare('DELETE FROM groups WHERE code != ? AND created < ? AND NOT EXISTS (SELECT 1 FROM members WHERE group_code = groups.code)')
+      .bind(GLOBAL, now - DAY),
+    env.DB.prepare('DELETE FROM enrollment_limits WHERE expires <= ?').bind(now),
+  ]);
 }
 
 async function groupAndMember(req, env, code) {
@@ -85,13 +153,15 @@ async function groupAndMember(req, env, code) {
 }
 
 async function join(env, code, nick) {
-  const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM members WHERE group_code = ?').bind(code).first('n');
-  if (code !== GLOBAL && count >= MAX_MEMBERS) return null;
   const id = newId();
   const token = newToken();
   const now = Date.now();
-  await env.DB.prepare('INSERT INTO members (id, group_code, token_hash, nick, joined) VALUES (?, ?, ?, ?, ?)')
-    .bind(id, code, await sha256(token), nick, now).run();
+  const result = await env.DB.prepare(
+    'INSERT INTO members (id, group_code, token_hash, nick, joined) SELECT ?, ?, ?, ?, ? ' +
+    'WHERE EXISTS (SELECT 1 FROM groups WHERE code = ?) ' +
+    'AND (? = ? OR (SELECT COUNT(*) FROM members WHERE group_code = ?) < ?)',
+  ).bind(id, code, await sha256(token), nick, now, code, code, GLOBAL, code, MAX_MEMBERS).run();
+  if (changes(result) !== 1) return null;
   return { member_id: id, token };
 }
 
@@ -107,9 +177,12 @@ export default {
     // create a group (the creator joins it)
     if (req.method === 'POST' && parts.length === 2 && parts[1] === 'groups') {
       const body = await readJson(req);
+      if (body === TOO_LARGE) return err(413, 'body too large');
       const name = cleanText(body?.group_name, 40) || 'token-tracker';
       const nick = cleanText(body?.nick, 24);
       if (!nick) return err(400, 'nick required');
+      if (!await allowEnrollment(req, env, 'create')) return rateLimited();
+      await cleanup(env);
       let code = newCode();
       for (let i = 0; i < 5; i++) {
         const taken = await env.DB.prepare('SELECT 1 FROM groups WHERE code = ?').bind(code).first();
@@ -132,8 +205,11 @@ export default {
       const group = await env.DB.prepare('SELECT * FROM groups WHERE code = ?').bind(code).first();
       if (!group) return err(404, 'group not found');
       const body = await readJson(req);
+      if (body === TOO_LARGE) return err(413, 'body too large');
       const nick = cleanText(body?.nick, 24);
       if (!nick) return err(400, 'nick required');
+      if (!await allowEnrollment(req, env, isGlobal ? 'global_join' : 'join')) return rateLimited();
+      await cleanup(env);
       const m = await join(env, code, nick);
       if (!m) return err(409, 'group is full');
       return json({ code, name: group.name, ...m }, 201);
@@ -145,6 +221,7 @@ export default {
 
     if (req.method === 'PUT' && action === 'score') {
       const body = await readJson(req);
+      if (body === TOO_LARGE) return err(413, 'body too large');
       if (!body || typeof body.periods !== 'object') return err(400, 'periods required');
       const now = Date.now();
       const nick = cleanText(body.nick, 24) || me.nick;
@@ -155,7 +232,7 @@ export default {
         const s = body.periods[p];
         if (!s) continue;
         const api = cleanNum(s.api), sub = cleanNum(s.sub), win = cleanWindow(s.window);
-        if (api === null || sub === null || !win) return err(400, `bad ${p}`);
+        if (!validScore(api, sub) || !win) return err(400, `bad ${p}`);
         const usage = s.usage === undefined ? api : cleanNum(s.usage);
         const tokens = s.tokens === undefined ? 0 : cleanCount(s.tokens);
         if (usage === null || tokens === null) return err(400, `bad ${p}`);
@@ -166,6 +243,7 @@ export default {
         ).bind(me.id, p, win, api, sub, now, calculationVersion, usage, Math.round(tokens)));
       }
       await env.DB.batch(stmts);
+      await cleanup(env);
       return json({ ok: true });
     }
 
@@ -177,27 +255,29 @@ export default {
       // and zero API usage are not participants for this window.
       const eligible = 'FROM scores s JOIN members m ON m.id = s.member_id ' +
         'WHERE m.group_code = ? AND s.period = ? AND s.window = ? ' +
-        'AND s.calculation_version = 2 AND s.api > 0 AND s.sub > 0';
+        `AND s.calculation_version = 2 AND ${VALID_RATIO} AND ${ACTIVE_GLOBAL}`;
+      const cutoff = Date.now() - RETENTION;
       const [topRows, totalRows, mineRows, placeRows] = await env.DB.batch([
         env.DB.prepare(
           'SELECT m.id, m.nick, m.plans, s.api, s.sub, (1.0 * s.api / s.sub) AS ratio, s.usage, s.tokens ' +
           eligible + ' ORDER BY ratio DESC, s.api DESC, m.id ASC LIMIT ?',
-        ).bind(GLOBAL, period, win, TOP),
-        env.DB.prepare('SELECT COUNT(*) AS n ' + eligible).bind(GLOBAL, period, win),
-        env.DB.prepare('SELECT api, sub, usage, tokens, calculation_version FROM scores WHERE member_id = ? AND period = ? AND window = ?')
+        ).bind(GLOBAL, period, win, cutoff, TOP),
+        env.DB.prepare('SELECT COUNT(*) AS n ' + eligible).bind(GLOBAL, period, win, cutoff),
+        env.DB.prepare('SELECT api, sub, usage, tokens, calculation_version, updated FROM scores WHERE member_id = ? AND period = ? AND window = ?')
           .bind(me.id, period, win),
         env.DB.prepare(
-          'WITH mine AS (SELECT api, sub, (1.0 * api / sub) AS ratio FROM scores ' +
-          'WHERE member_id = ? AND period = ? AND window = ? AND calculation_version = 2 AND api > 0 AND sub > 0) ' +
+          'WITH mine AS (SELECT s.api, s.sub, (1.0 * s.api / s.sub) AS ratio ' + eligible + ' AND m.id = ?) ' +
           'SELECT 1 + (SELECT COUNT(*) ' + eligible + ' AND ((1.0 * s.api / s.sub) > mine.ratio ' +
           'OR ((1.0 * s.api / s.sub) = mine.ratio AND s.api > mine.api) ' +
           'OR ((1.0 * s.api / s.sub) = mine.ratio AND s.api = mine.api AND m.id < ?))) AS place FROM mine',
-        ).bind(me.id, period, win, GLOBAL, period, win, me.id),
+        ).bind(GLOBAL, period, win, cutoff, me.id, GLOBAL, period, win, cutoff, me.id),
       ]);
       const results = topRows.results;
       const total = totalRows.results[0].n;
       const mine = mineRows.results[0];
-      const ratio = mine && mine.sub > 0 ? mine.api / mine.sub : null;
+      const updated = mine?.updated || me.joined;
+      const current = mine && validScore(mine.api, mine.sub) && (updated === 0 || updated >= cutoff);
+      const ratio = current && mine.sub > 0 ? mine.api / mine.sub : null;
       const place = placeRows.results[0]?.place ?? null;
       return json({
         period, window: win, total, place, ratio, api: mine ? mine.api : 0, sub: mine ? mine.sub : 0,
@@ -216,7 +296,7 @@ export default {
         'LEFT JOIN scores s ON s.member_id = m.id AND s.period = ? WHERE m.group_code = ?',
       ).bind(period, code)]);
       const members = results.map((r) => {
-        const current = r.window && (!win || r.window === win) && r.calculation_version === 2;
+        const current = r.window && (!win || r.window === win) && r.calculation_version === 2 && validScore(r.api, r.sub);
         const api = current ? r.api : 0;
         const sub = current ? r.sub : 0;
         return {
@@ -234,8 +314,10 @@ export default {
         env.DB.prepare('DELETE FROM scores WHERE member_id = ?').bind(me.id),
         env.DB.prepare('DELETE FROM members WHERE id = ?').bind(me.id),
       ]);
-      const left = await env.DB.prepare('SELECT COUNT(*) AS n FROM members WHERE group_code = ?').bind(code).first('n');
-      if (!left && code !== GLOBAL) await env.DB.prepare('DELETE FROM groups WHERE code = ?').bind(code).run();
+      if (code !== GLOBAL) await env.DB.prepare(
+        'DELETE FROM groups WHERE code = ? AND NOT EXISTS (SELECT 1 FROM members WHERE group_code = groups.code)',
+      ).bind(code).run();
+      await cleanup(env);
       return json({ ok: true });
     }
 

@@ -66,7 +66,7 @@ jobs:
 
   release:
     needs: build
-    if: always() && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,12 +80,17 @@ jobs:
           path: out
           pattern: dmg-*
           merge-multiple: true
+      - name: Verify both DMGs
+        run: |
+          VER=$(tr -d '[:space:]' < VERSION)
+          test -s "out/TokenTracker-${VER}-mac-arm64.dmg"
+          test -s "out/TokenTracker-${VER}-mac-x86_64.dmg"
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           target_commitish: ${{ github.sha }}
           files: out/*.dmg
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
           body: |
             macOS: 내 Mac에 맞는 DMG를 받아 Token Tracker를 Applications로 끌어다 놓으세요.
             (Apple Silicon = arm64, Intel = x86_64)

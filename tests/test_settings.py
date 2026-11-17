@@ -8,7 +8,8 @@ class Settings(unittest.TestCase):
         engine = Mock()
         handler = server.make_handler(engine).__new__(server.make_handler(engine))
         handler.path = '/api/settings'
-        handler.headers = {}
+        handler.headers = {'Host': '127.0.0.1:8765'}
+        handler.server = Mock(server_address=('127.0.0.1', 8765))
         handler._send = Mock()
         return handler, engine
 
@@ -43,3 +44,30 @@ class Settings(unittest.TestCase):
         with patch.object(server.paths, 'load_config', return_value={}), patch.object(server.paths, 'save_config'):
             handler.do_POST()
         handler._send.assert_called_once_with(200, {'ok': True})
+
+    def test_rebound_host_and_foreign_origin_are_refused(self):
+        # DNS rebinding: a page on evil.example resolves its own name to 127.0.0.1, so the
+        # browser sends Host and Origin for evil.example; both must be refused, reads included.
+        for method, headers in (('do_GET', {'Host': 'evil.example:8765'}),
+                                ('do_POST', {'Host': 'evil.example:8765', 'Origin': 'http://evil.example:8765'}),
+                                ('do_POST', {'Host': '127.0.0.1:8765', 'Origin': 'http://evil.example'}),
+                                ('do_GET', {'Host': '127.0.0.1:9999'}),
+                                ('do_GET', {})):
+            handler, _ = self.handler()
+            handler.headers = headers
+            handler._body = Mock(return_value={'auto_update': False})
+            with patch.object(server.paths, 'load_config', return_value={}) as load, \
+                    patch.object(server.paths, 'save_config') as save:
+                getattr(handler, method)()
+            handler._send.assert_called_once_with(403, {'error': 'forbidden'})
+            load.assert_not_called()
+            save.assert_not_called()
+
+    def test_loopback_names_are_served(self):
+        for host in ('127.0.0.1:8765', 'localhost:8765', 'LOCALHOST:8765', '[::1]:8765'):
+            handler, _ = self.handler()
+            handler.headers = {'Host': host, 'Origin': f'http://{host.lower()}'}
+            handler._body = Mock(return_value={})
+            with patch.object(server.paths, 'load_config', return_value={}), patch.object(server.paths, 'save_config'):
+                handler.do_POST()
+            handler._send.assert_called_once_with(200, {'ok': True})

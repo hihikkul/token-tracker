@@ -4,8 +4,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import paths, ranking, stats, updater
-from .sources import NAMES, enabled
+from . import paths, ranking, sources, stats, updater
+from .sources import enabled
 from .limits import all_limits
 from .db import DB
 
@@ -19,12 +19,24 @@ def ranking_limits(engine):
     return result
 
 WEB = paths.APP_DIR / "web"
+LOOPBACK_NAMES = ("127.0.0.1", "localhost", "[::1]")
 
 
 def make_handler(engine):
     class H(BaseHTTPRequestHandler):
+        timeout = 15
+
         def log_message(self, *a):
             pass
+
+        def _local_host(self):
+            """The request's Host when it names this server on the loopback, else None.
+
+            Web pages cannot read 127.0.0.1 themselves, but DNS rebinding can point their own
+            domain here; those requests still carry that domain in Host, so they are refused."""
+            host = (self.headers.get("Host") or "").strip().lower()
+            port = self.server.server_address[1]
+            return host if host in {f"{name}:{port}" for name in LOOPBACK_NAMES} else None
 
         def _send(self, code, body, ctype="application/json; charset=utf-8"):
             if isinstance(body, (dict, list)):
@@ -39,12 +51,16 @@ def make_handler(engine):
             self.wfile.write(body)
 
         def do_GET(self):
+            if not self._local_host():
+                return self._send(403, {"error": "forbidden"})
             u = urlparse(self.path)
             q = parse_qs(u.query)
             if u.path == '/api/settings':
                 cfg = paths.load_config()
-                return self._send(200, {'sources': {k: k in enabled(cfg) for k in NAMES},
-                    'source_names': NAMES, 'version': updater.local_version(),
+                names = sources.names()
+                selected = set(enabled(cfg))
+                return self._send(200, {'sources': {k: k in selected for k in names},
+                    'source_names': names, 'source_meta': sources.meta(), 'version': updater.local_version(),
                     'widget': {k: cfg.get('widget', {}).get(k) for k in ('font','number_font','opacity','topmost','taskbar')},
                     'auto_update': cfg.get('auto_update', True),
                     'subscription_usd_month': cfg.get('subscription_usd_month', {}),
@@ -84,13 +100,15 @@ def make_handler(engine):
             if u.path == "/api/data":
                 from .export import build
                 data = build(engine.db, limits=engine.snapshot.get('limits') or {})
-                selected = set(enabled())
-                names = {NAMES[key] for key in selected}
-                for key in ('daily', 'daily_detail', 'hours_detail'):
-                    data[key] = [row for row in data[key] if row['tool'] in names]
+                cfg = paths.load_config()
+                selected = set(enabled(cfg))
+                names = {name for key, name in sources.names().items() if key in selected}
+                for key in ('daily', 'daily_detail', 'hours_detail', 'unpriced'):
+                    data[key] = [row for row in data.get(key, []) if row['tool'] in names]
                 data["meta"] = {"last_scan": engine.snapshot.get("updated"),
                                 "coverage": stats.coverage(engine.db),
-                                "artifact_url": paths.load_config().get("artifact_url")}
+                                "artifact_url": cfg.get("artifact_url"),
+                                "source_meta": sources.meta()}
                 return self._send(200, data)
             if u.path == "/api/stats":
                 days = max(1, min(365, int((q.get("days") or ["30"])[0])))
@@ -110,18 +128,34 @@ def make_handler(engine):
             return self._send(404, {"error": "not found"})
 
         def _body(self):
-            n = int(self.headers.get("Content-Length") or 0)
-            if n > 16384:
-                return {}
             try:
-                return json.loads(self.rfile.read(n).decode("utf-8") or "{}")
+                n = int(self.headers.get("Content-Length") or 0)
             except ValueError:
-                return {}
+                n = -1
+            if n < 0 or n > 16384:
+                self.close_connection = True
+                self._send(413 if n > 16384 else 400, {'error': 'invalid Content-Length'})
+                return None
+            try:
+                body = json.loads(self.rfile.read(n).decode("utf-8") or "{}")
+                if not isinstance(body, dict):
+                    raise ValueError('expected JSON object')
+                return body
+            except ValueError:
+                self._send(400, {'error': 'invalid JSON body'})
+            except OSError:
+                self.close_connection = True
+                self._send(408, {'error': 'request body timed out'})
+            return None
 
         def do_POST(self):
             path = urlparse(self.path).path
-            if path.startswith("/api/") and self.headers.get("Origin") not in (None, f"http://{self.headers.get('Host')}"):
+            host = self._local_host()
+            if not host or self.headers.get("Origin") not in (None, f"http://{host}"):
                 return self._send(403, {"error": "forbidden"})  # only the dashboard itself may change settings
+            b = self._body()
+            if b is None:
+                return
             if path == '/api/update':
                 try:
                     latest = updater.check()
@@ -133,7 +167,6 @@ def make_handler(engine):
                 except Exception:
                     return self._send(503, {'error': 'Update check failed. Check your internet connection.'})
             if path.startswith("/api/ranking/"):
-                b = self._body()
                 nick = str(b.get("nick") or "").strip()[:24]
                 joined = None
                 try:
@@ -164,46 +197,46 @@ def make_handler(engine):
                 return self._send(200, {'ok': True, 'state': ranking.state(),
                                         **({'code': joined['code']} if joined else {})})
             if path == "/api/settings":
-                b = self._body()
-                cfg = paths.load_config()
-                selected = b.get('sources')
-                if isinstance(selected, dict):
-                    cfg['sources'] = {key: value for key, value in selected.items()
-                                      if key in NAMES and isinstance(value, bool)}
-                subs = cfg.setdefault("subscription_usd_month", {})
-                plans = b.get('subscription_plans')
-                if isinstance(plans, dict):
-                    choices = cfg.setdefault('subscription_plans', {})
-                    for src, choice in plans.items():
-                        if src in ranking.PLAN_OPTIONS and isinstance(choice, str) and (choice == 'auto' or choice in ranking.PLAN_OPTIONS[src]):
-                            choices[src] = choice
-                            subs[src] = 0
-                account_plans = b.get('account_plans')
-                if isinstance(account_plans, dict) and isinstance(account_plans.get('codex'), dict):
-                    valid = {row['key'] for row in ranking.codex_subscriptions(ranking_limits(engine), cfg)}
-                    choices = cfg.setdefault('account_plans', {}).setdefault('codex', {})
-                    for key, choice in account_plans['codex'].items():
-                        if key in valid and isinstance(choice, str) and (choice == 'auto' or choice in ranking.PLAN_OPTIONS['codex']):
-                            choices[key] = choice
-                prices = b.get("subscription_usd_month")
-                for src, v in (prices if isinstance(prices, dict) else {}).items():
-                    if src in ("claude", "codex", "gemini") and isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v < 10000:
-                        subs[src] = v
-                wc = cfg.setdefault('widget', {})
-                incoming = b.get('widget')
-                incoming = incoming if isinstance(incoming, dict) else {}
-                for key in ('topmost', 'taskbar'):
-                    if isinstance(incoming.get(key), bool):
-                        wc[key] = incoming[key]
-                for key in ('font', 'number_font'):
-                    if isinstance(incoming.get(key), str) and len(incoming[key]) <= 80:
-                        wc[key] = incoming[key].strip()
-                opacity = incoming.get('opacity')
-                if isinstance(opacity, (int, float)) and not isinstance(opacity, bool) and .2 <= opacity <= 1:
-                    wc['opacity'] = opacity
-                if isinstance(b.get('auto_update'), bool):
-                    cfg['auto_update'] = b['auto_update']
-                paths.save_config(cfg)
+                with paths.config_lock():  # nothing else may save between this read and the write
+                    cfg = paths.load_config()
+                    selected = b.get('sources')
+                    if isinstance(selected, dict):
+                        cfg['sources'] = {key: value for key, value in selected.items()
+                                          if key in sources.names() and isinstance(value, bool)}
+                    subs = cfg.setdefault("subscription_usd_month", {})
+                    plans = b.get('subscription_plans')
+                    if isinstance(plans, dict):
+                        choices = cfg.setdefault('subscription_plans', {})
+                        for src, choice in plans.items():
+                            if src in ranking.PLAN_OPTIONS and isinstance(choice, str) and (choice == 'auto' or choice in ranking.PLAN_OPTIONS[src]):
+                                choices[src] = choice
+                                subs[src] = 0
+                    account_plans = b.get('account_plans')
+                    if isinstance(account_plans, dict) and isinstance(account_plans.get('codex'), dict):
+                        valid = {row['key'] for row in ranking.codex_subscriptions(ranking_limits(engine), cfg)}
+                        choices = cfg.setdefault('account_plans', {}).setdefault('codex', {})
+                        for key, choice in account_plans['codex'].items():
+                            if key in valid and isinstance(choice, str) and (choice == 'auto' or choice in ranking.PLAN_OPTIONS['codex']):
+                                choices[key] = choice
+                    prices = b.get("subscription_usd_month")
+                    for src, v in (prices if isinstance(prices, dict) else {}).items():
+                        if src in ranking.SOURCES and isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v < 10000:
+                            subs[src] = v
+                    wc = cfg.setdefault('widget', {})
+                    incoming = b.get('widget')
+                    incoming = incoming if isinstance(incoming, dict) else {}
+                    for key in ('topmost', 'taskbar'):
+                        if isinstance(incoming.get(key), bool):
+                            wc[key] = incoming[key]
+                    for key in ('font', 'number_font'):
+                        if isinstance(incoming.get(key), str) and len(incoming[key]) <= 80:
+                            wc[key] = incoming[key].strip()
+                    opacity = incoming.get('opacity')
+                    if isinstance(opacity, (int, float)) and not isinstance(opacity, bool) and .2 <= opacity <= 1:
+                        wc['opacity'] = opacity
+                    if isinstance(b.get('auto_update'), bool):
+                        cfg['auto_update'] = b['auto_update']
+                    paths.save_config(cfg)
                 engine.poke()
                 ranking._last_sync['t'] = 0
                 return self._send(200, {"ok": True})

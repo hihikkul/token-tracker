@@ -126,6 +126,9 @@ def antigravity():
 
 
 def fetch(db, source, force=False):
+    providers = {'gemini': gemini_cli, 'antigravity': antigravity}
+    if source not in providers:
+        raise ValueError('Unknown Google quota source')
     cached = db.get_kv(source + '_limits') or {}
     now = time.time()
     if not force and now - cached.get('checked_at', 0) < 300:
@@ -133,7 +136,7 @@ def fetch(db, source, force=False):
     result = {'source': source, 'windows': cached.get('windows', []),
               'checked_at': now, 'fetched_at': cached.get('fetched_at')}
     try:
-        result.update(gemini_cli() if source == 'gemini' else antigravity())
+        result.update(providers[source]())
         if result.get('status') == 'ok':
             result['fetched_at'] = now
     except Exception:

@@ -3,6 +3,8 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 HOME = Path.home()
@@ -137,31 +139,124 @@ def migrate_ranking(cfg):
     return True
 
 
+# The widget, the dashboard's request threads and the ranking code all rewrite config.json.
+# Every read-modify-write runs under this lock (see update_config), and each write replaces the
+# file in one step, so a reader never sees half a file and nobody saves over a newer change.
+_config_lock = threading.RLock()
+_last_good = None  # last config read successfully in this process
+
+
+def config_lock():
+    return _config_lock
+
+
+def _backup_path() -> Path:
+    return config_path().with_name("config.json.bak")
+
+
+def _read_json(p):
+    """A config dict from p; OSError/ValueError when it cannot be read as one."""
+    for attempt in range(5):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            break
+        except PermissionError:  # Windows: another process is replacing the file right now
+            if attempt == 4:
+                raise
+            time.sleep(0.05)
+    if not isinstance(data, dict):
+        raise ValueError("config is not a JSON object")
+    return data
+
+
+def _keep_broken_copy(p):
+    """Copy an unreadable config aside before anything is saved over it (a hand edit, say)."""
+    try:
+        data = p.read_bytes()
+        aside = p.with_name("config.json.broken")
+        if not aside.exists() or aside.read_bytes() != data:
+            aside.write_bytes(data)
+    except OSError:
+        pass
+
+
+def _user_config(p):
+    """The saved settings: config.json, else its backup, else the last good copy in memory."""
+    global _last_good
+    try:
+        user = _read_json(p)
+        _last_good = json.loads(json.dumps(user))
+        return user
+    except ValueError:
+        _keep_broken_copy(p)
+    except OSError:
+        pass
+    try:
+        return _read_json(_backup_path())
+    except (OSError, ValueError):
+        pass
+    return json.loads(json.dumps(_last_good)) if _last_good is not None else {}
+
+
 def load_config() -> dict:
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
     p = config_path()
-    if p.exists():
-        try:
-            user = json.loads(p.read_text(encoding="utf-8"))
-            for k, v in user.items():
+    with _config_lock:
+        if p.exists():
+            for k, v in _user_config(p).items():
                 if isinstance(v, dict) and isinstance(cfg.get(k), dict):
                     cfg[k].update(v)
                 else:
                     cfg[k] = v
-        except (OSError, ValueError):
-            pass
-    else:
-        try:
-            p.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-        except OSError:
-            pass
-    if migrate_ranking(cfg):
-        save_config(cfg)
+        else:
+            save_config(cfg)
+        if migrate_ranking(cfg):
+            save_config(cfg)
     return cfg
 
 
-def save_config(cfg: dict):
+def _write_atomic(path, text):
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
-        config_path().write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-    except OSError:
-        pass
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        for attempt in range(10):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:  # Windows: a reader in another process holds it open
+                if attempt == 9:
+                    raise
+                time.sleep(0.05)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def save_config(cfg: dict) -> bool:
+    """Write the whole config; True when it reached the disk."""
+    global _last_good
+    text = json.dumps(cfg, indent=2, ensure_ascii=False)
+    with _config_lock:
+        try:
+            # backup first: if config.json is ever damaged, the newest settings survive here
+            _write_atomic(_backup_path(), text)
+            _write_atomic(config_path(), text)
+        except OSError:
+            return False
+        _last_good = json.loads(text)
+    return True
+
+
+def update_config(change):
+    """Re-read the config, apply change(cfg) and save, all under the config lock.
+    Use this instead of saving a copy loaded earlier, which would undo newer edits."""
+    with _config_lock:
+        cfg = load_config()
+        result = change(cfg)
+        save_config(cfg)
+        return result

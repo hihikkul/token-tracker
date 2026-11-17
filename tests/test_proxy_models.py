@@ -14,6 +14,15 @@ class IsolatedEnvironment(unittest.TestCase):
         env = patch.dict(os.environ)
         env.start()
         self.addCleanup(env.stop)
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        os.environ.update(TOKENTRACKER_HOME=str(root / 'data'), CLAUDE_CONFIG_DIR=str(root / 'claude'),
+                          CODEX_HOME=str(root / 'codex'), GEMINI_HOME=str(root / 'gemini'),
+                          CLAUDERIPPLE_HOME=str(root / 'ripple'))
+        active = patch('tracker.ripple.active_account', return_value=None)
+        active.start()
+        self.addCleanup(active.stop)
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -24,10 +33,12 @@ from tracker.collectors import claude_log_source  # noqa: E402
 class ProxyModels(IsolatedEnvironment):
     def test_vendor_rules(self):
         cases = {
-            "claude-opus-5-5": "claude", "claude-haiku-5-5": "claude", "anthropic/claude-opus-5": "claude",
+            "claude-opus-5-5": "claude", "claude-haiku-5-5": "claude", "anthropic/claude-opus-5": "anthropic",
             "gpt-6-astra": "codex", "gpt-6-astra@high": "codex", "gpt-6.1-sol": "codex", "o3": "codex",
-            "codex-mini": "codex", "gemini-3-pro": "gemini", "deepseek-v4": "other", "kimi-k2.5": "other",
-            "openrouter/openai/gpt-5": "other", "gpt-oss-120b": "other",
+            "codex-mini": "codex", "gemini-3-pro": "gemini", "deepseek-v4": "deepseek", "kimi-k2.5": "kimi",
+            "openrouter/openai/gpt-5": "openai_api", "gpt-oss-120b": "openai_api",
+            "openai/gpt-oss": "openai_api", "google/gemini-3-pro": "google", "deepseek/deepseek-chat": "deepseek",
+            "chatgpt-4o": "codex", "o4-mini": "codex", "qwen3-coder": "qwen", "acme/model": "acme",
         }
         for model, want in cases.items():
             self.assertEqual(claude_log_source(model), want, model)
@@ -53,7 +64,7 @@ class ProxyModels(IsolatedEnvironment):
             collectors.scan_claude(d, {})
             got = {r["model"]: r["source"] for r in d.query("SELECT model, source FROM records")}
             self.assertEqual(got, {"claude-opus-5-5": "claude", "gpt-6-astra@high": "codex",
-                                   "deepseek-v4": "other", "gpt-6.1-sol": "codex"})
+                                   "deepseek-v4": "deepseek", "gpt-6.1-sol": "codex"})
 
 
 if __name__ == "__main__":
@@ -78,7 +89,13 @@ class UpdaterRoot(unittest.TestCase):
 
 
 class ProxyAccount(IsolatedEnvironment):
-    def test_gpt_turns_get_clauderipples_first_usable_login(self):
+    def setUp(self):
+        super().setUp()
+        snapshots = patch('tracker.ripple.chatgpt_snapshots', return_value=[])
+        snapshots.start()
+        self.addCleanup(snapshots.stop)
+
+    def test_recent_gpt_turns_get_clauderipples_first_usable_login(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             ripple = root / "ripple"
@@ -90,7 +107,7 @@ class ProxyAccount(IsolatedEnvironment):
             proj = root / "claude" / "projects" / "C--work"
             proj.mkdir(parents=True)
             (proj / "s.jsonl").write_text(json.dumps({
-                "type": "assistant", "timestamp": "2026-10-14T03:00:00Z", "requestId": "r", "sessionId": "s",
+                "type": "assistant", "timestamp": int(time.time()), "requestId": "r", "sessionId": "s",
                 "message": {"id": "m", "model": "gpt-6-astra", "usage": {"input_tokens": 9, "output_tokens": 1}}}) + "\n")
             os.environ.update(TOKENTRACKER_HOME=str(root / "data"), CLAUDE_CONFIG_DIR=str(root / "claude"),
                               CLAUDERIPPLE_HOME=str(ripple), CODEX_HOME=str(root / "codex"))
@@ -100,7 +117,7 @@ class ProxyAccount(IsolatedEnvironment):
                                "input": 1, "output": 1}])
             collectors.scan_claude(d, {})
             got = {r["uid"]: r["account"] for r in d.query("SELECT uid, account FROM records")}
-            self.assertEqual(got, {"c:old:2": "acct-business", "c:m:r": "acct-business"})
+            self.assertEqual(got, {"c:old:2": None, "c:m:r": "acct-business"})
 
     def test_without_clauderipple_the_codex_login_is_used(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -114,8 +131,7 @@ class ProxyAccount(IsolatedEnvironment):
 
 class RippleQuota(IsolatedEnvironment):
     def test_live_quota_of_the_account_in_use_leads(self):
-        import threading
-        from http.server import BaseHTTPRequestHandler, HTTPServer
+        from unittest.mock import MagicMock
         now = time.time()
         body = {"provider": "chatgpt-subscription-2", "accounts": [
             {"id": "own-biz", "planType": "self_serve_business_prolite", "active": True,
@@ -124,22 +140,13 @@ class RippleQuota(IsolatedEnvironment):
                                                    "reset_after_seconds": 3600}, "secondary": None}}},
             {"id": "own-plus", "planType": "plus", "active": False, "quota": None}]}
 
-        class H(BaseHTTPRequestHandler):
-            def log_message(self, *a):
-                pass
-
-            def do_GET(self):
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(json.dumps(body).encode())
-
-        srv = HTTPServer(("127.0.0.1", 0), H)
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(body).encode()
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             ripple = root / "ripple"
             ripple.mkdir()
-            (ripple / "config.json").write_text(json.dumps({"admin": {"port": srv.server_address[1]}}))
+            (ripple / "config.json").write_text(json.dumps({"admin": {"port": 12345}}))
             (ripple / "chatgpt-accounts.json").write_text(json.dumps({"accounts": [
                 {"id": "own-biz", "accountId": "acct-biz"}, {"id": "own-plus", "accountId": "acct-plus"}]}))
             os.environ.update(TOKENTRACKER_HOME=str(root / "data"), CLAUDERIPPLE_HOME=str(ripple),
@@ -150,9 +157,8 @@ class RippleQuota(IsolatedEnvironment):
             d.set_kv("codex_limits_by_account", {"plan:plus:codex": {
                 "ts": now - 3600, "limit_id": "codex", "plan": "plus", "account": "acct-plus",
                 "windows": [{"key": "primary", "used_percent": 20, "window_minutes": 300, "resets_at": now + 600}]}})
-            out = limits.codex_limits(d)
-            srv.shutdown()
-            srv.server_close()
+            with patch('tracker.ripple._NO_PROXY.open', return_value=response):
+                out = limits.codex_limits(d)
             d.conn.close()
         self.assertEqual(out["accounts"][0]["account"], "acct-biz")
         self.assertEqual(out["accounts"][0]["plan"], "Business Premium")

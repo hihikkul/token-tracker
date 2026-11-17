@@ -190,6 +190,10 @@ class RankingGroups(unittest.TestCase):
         self.assertEqual([g['nick'] for g in self.cfg['ranking_groups']], ['하나', '새 닉네임'])
         ranking.set_nick('첫 그룹 닉네임')  # legacy signature
         with patch.object(ranking, '_call', side_effect=ranking.RankingError('offline')):
+            with self.assertRaises(ranking.RankingError):
+                ranking.leave('CCCC-DDDD')
+        self.assertEqual(len(self.cfg['ranking_groups']), 2)
+        with patch.object(ranking, '_call', return_value={'ok': True}):
             ranking.leave('CCCC-DDDD')
         self.assertEqual([g['code'] for g in self.cfg['ranking_groups']], ['AAAA-BBBB'])
         self.assertEqual(self.cfg['ranking_groups'][0]['nick'], '첫 그룹 닉네임')
@@ -256,10 +260,11 @@ class RankingGroups(unittest.TestCase):
         engine = Mock(); engine.snapshot = {'limits': {'codex': {'plan': 'Pro 100'}}}
         cls = server.make_handler(engine); handler = cls.__new__(cls)
         handler.path = '/api/ranking?code=CCCC-DDDD&period=month'; handler._send = Mock()
+        handler.server = Mock(server_address=('127.0.0.1', 8765)); handler.headers = {'Host': '127.0.0.1:8765'}
         with patch.object(ranking, 'ranking', return_value={}) as get:
             handler.do_GET()
         get.assert_called_once_with(engine.db, engine.snapshot['limits'], 'month', 'CCCC-DDDD')
-        handler.path = '/api/ranking/leave'; handler.headers = {}
+        handler.path = '/api/ranking/leave'
         handler._body = Mock(return_value={'code': 'CCCC-DDDD'})
         with patch.object(ranking, 'leave') as leave:
             handler.do_POST()

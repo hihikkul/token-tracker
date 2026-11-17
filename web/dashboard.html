@@ -19,7 +19,9 @@
     --shadow: 0 1px 2px rgba(24, 24, 27, .05), 0 8px 24px -14px rgba(24, 24, 27, .14);
   --s1: var(--accent); --s2: #6d5bd0; --s3: #0f9473; --s4: #c2508f; --s5: #b39200; --s6: #64748b; --s7: #0b8fb3; --s8: #8f6a4d; --s9: #b4b4ae;
   --c1: #d4693f; --c2: #eba07a; --c3: #a8502e;
-  --claude: #d9622b; --codex: #2f6fdb; --gemini: #128a62;
+  --claude: #d9622b; --codex: #2f6fdb; --gemini: #128a62; --deepseek: #6250d6;
+  --provider1: #2a78d6; --provider2: #eb6834; --provider3: #1baf7a; --provider4: #eda100;
+  --provider5: #e87ba4; --provider6: #008300; --provider7: #6250d6; --provider8: #e34948;
   --antigravity: var(--gemini); --chatgpt: var(--codex); --gemini_web: var(--gemini);
   --good: #1f9d55; --warning: #c98a00; --serious: #e0662f; --critical: #d63a3a; --track: #eeeeea;
   --font: Calibri, "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
@@ -30,7 +32,9 @@
   --page: #111113; --card: #18181b; --card2: #202024; --line: #2a2a2e; --edge: rgba(255, 255, 255, .08);
   --ink: #f4f4f5; --ink2: #b9b9c0; --muted: #85858d;
   --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 8px 24px -12px rgba(0, 0, 0, .5);
-  --claude: #e8794a; --codex: #5b9cf5; --gemini: #34c08b; --track: #26262b;
+  --claude: #e8794a; --codex: #5b9cf5; --gemini: #34c08b; --deepseek: #9085e9; --track: #26262b;
+  --provider1: #3987e5; --provider2: #d95926; --provider3: #199e70; --provider4: #c98500;
+  --provider5: #d55181; --provider6: #0ca30c; --provider7: #9085e9; --provider8: #e66767;
   --good: #3fb950; --warning: #e3b341; --serious: #f0883e; --critical: #f85149;
 }
 * { box-sizing: border-box; }
@@ -348,7 +352,17 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
   .fade { animation: fade .35s cubic-bezier(.16, 1, .3, 1) both; }
   @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 }
-.settings-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:12px 0 24px}.settings-grid label {display:grid;gap:8px}.settings-grid input,.settings-grid select {padding:10px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;min-width:0;width:100%}
+.settings-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:16px;margin:12px 0 24px}.settings-grid label {display:grid;gap:8px;min-width:0}.settings-grid input,.settings-grid select {padding:10px;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;min-width:0;width:100%}
+#tool { flex-wrap: wrap; border-radius: 18px; max-width: 100%; }
+#tool button, #provider-legend button { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 36px; overflow-wrap: anywhere; text-align: left; }
+#tool i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.new-source { display: inline-block; font-size: 11px; font-weight: 400; white-space: nowrap; color: var(--ink2); background: var(--card2); border: 1px solid var(--edge); border-radius: 999px; padding: 1px 6px; }
+.source-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; overflow-wrap: anywhere; }
+.source-banner .btn { flex: none; min-height: 44px; }
+#sourceForm label, #ratio-payg, #unpriced-note { overflow-wrap: anywhere; }
+#sourceForm label { min-width: 0; }
+#ratio-payg { margin-top: 10px; }
+@media (max-width: 720px) { #tool button, #provider-legend button { min-height: 44px; }.ratio { padding: 18px 14px; }.rrow .nm div { flex-wrap: wrap; }.rrow .nm b, .lim-h b { overflow-wrap: anywhere; }.lim-h { flex-wrap: wrap; } }
 </style>
 
 <a class="skip" href="#main">본문으로 건너뛰기</a>
@@ -375,11 +389,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
     <p class="note">연결되지 않은 앱은 위젯과 한도 카드에서 숨깁니다.</p>
     <form id="settingsForm">
       <h3>사용 중인 요금제</h3><p class="note">요금제를 선택하면 구독료가 자동으로 계산됩니다. 자동 감지는 앱에서 확인한 요금제를 사용합니다.</p>
-      <div class="settings-grid">
-        <label>Claude<select name="claude"></select></label>
-        <label>Codex · ChatGPT<select name="codex"></select></label>
-        <label>Gemini · Antigravity<select name="gemini"></select></label>
-      </div>
+      <div id="subscriptionPlans" class="settings-grid"></div>
       <div id="codexAccountPlans" class="settings-grid" hidden></div>
       <p class="note">USD 정가 기준이며 세금·할인은 반영하지 않습니다. 연간 요금제는 월 환산액을 사용합니다. 같은 계정의 구독은 공유 앱에서 한 번만, 서로 다른 계정의 구독은 각각 계산합니다. 가격 미확인 요금제는 합계 배율에서 제외합니다.</p>
       <h3>위젯 모양</h3><div class="settings-grid">
@@ -399,7 +409,9 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
     </form>
   </section>
 
+  <div id="source-banners" style="display:grid;gap:8px" aria-live="polite"></div>
   <section class="limits" id="limits" aria-label="남은 한도" hidden></section>
+  <div class="note" id="unpriced-note" hidden></div>
 
   <section class="card ratio" id="ratio-card" aria-label="쌀먹 비율" hidden>
     <div class="ratio-l">
@@ -415,6 +427,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
     <div class="ratio-r">
       <div class="rrow rh"><span>도구 · 요금제</span><span>API 환산 (세로선 = 구독료, 본전)</span><span style="text-align:right">환산 / 구독</span><span style="text-align:right">배율</span></div>
       <div id="r-rows"></div>
+      <div class="note" id="ratio-payg" hidden></div>
       <div class="rfoot"><span>설정에서 사용 중인 요금제를 선택하세요. Codex·ChatGPT, Gemini CLI·Antigravity·Gemini 웹은 같은 구독료를 중복 합산하지 않습니다.</span><button class="linkbtn" id="subEdit" type="button">요금제 선택</button></div>
     </div>
   </section>
@@ -464,7 +477,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
         <button type="button" data-v="7">7일</button><button type="button" data-v="30">30일</button><button type="button" data-v="90">90일</button><button type="button" data-v="all">전체</button>
       </div>
       <div class="seg" id="tool" role="group" aria-label="도구">
-        <button type="button" data-v="all">전체</button><button type="button" data-v="Claude Code">Claude</button><button type="button" data-v="Codex">Codex</button>
+        <button type="button" data-v="all">전체</button>
       </div>
       <div class="seg" id="unit" role="group" aria-label="단위">
         <button type="button" data-v="tokens">토큰</button><button type="button" data-v="cost">비용 $</button>
@@ -480,6 +493,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
 
     <section class="card" id="daily-card">
       <h2><span id="daily-title">일별 토큰</span><small id="daily-sub"></small></h2>
+      <div class="legend" id="provider-legend" role="group" aria-label="AI 제공자 필터"></div>
       <div class="legend" id="legend"></div>
       <div id="daily" style="min-height:280px"></div>
     </section>
@@ -535,7 +549,8 @@ function readHash() {
   if (p.get('v') === 'rank') st.rankTab = p.get('r') || null;
   else if (['7', '30', '90', 'all'].includes(p.get('r'))) st.range = p.get('r');
   if (['tokens', 'cost'].includes(p.get('u'))) st.unit = p.get('u');
-  if (['all', 'Claude Code', 'Codex', 'ChatGPT', 'Gemini CLI', 'Antigravity', 'Gemini Web'].includes(p.get('t'))) st.tool = p.get('t');
+  // Resolve keys and legacy display-name bookmarks after the live registry arrives.
+  st.tool = p.get('t') || 'all';
   st.model = p.get('m'); st.project = p.get('p');
   st.view = ['rank','settings'].includes(p.get('v')) ? p.get('v') : 'main';
 }
@@ -580,7 +595,7 @@ function prepare() {
 const color = (m) => { if (m.startsWith('claude')) { const i = CLAUDE.indexOf(m); return `var(--c${Math.min(3, i + 1)})`; } const i = OTHER.indexOf(m); return `var(--s${i >= 0 && i < 8 ? i + 1 : 9})`; };
 const from = (range) => range === 'all' ? FIRST : iso(d3.timeDay.offset(P(LAST), -(Number(range) - 1)));
 const prevWindow = (n) => [iso(d3.timeDay.offset(P(LAST), -(2 * n - 1))), iso(d3.timeDay.offset(P(LAST), -n))];
-const passTool = (r) => st.tool === 'all' || (r.tool || 'Codex') === st.tool;
+const passTool = (r) => st.tool === 'all' || sourceKey(r.source || r.tool || '') === sourceKey(st.tool);
 const pass = (r) => passTool(r) && (!st.model || r.model === st.model) && (!st.project || r.project === st.project);
 const rows = (range = st.range) => DATA.daily.filter((r) => r.date >= from(range) && pass(r));
 
@@ -856,12 +871,12 @@ function hours() {
 
 // ---------- input / output / cache mix
 const PARTS = [['input', '새 입력', 'var(--s2)'], ['cache_read', '캐시 읽기', 'var(--accent)'], ['cache_write', '캐시 쓰기', 'var(--s5)'], ['output', '출력', 'var(--s3)']];
-const priceOf = (m) => (DATA.prices || {})[m];
+const priceOf = (m, peak) => { const p = (DATA.prices || {})[m]; return peak && p?.peak ? p.peak : p; };
 function mix() {
   const R = rows(), card = $('mix-card');
   const T = Object.fromEntries(PARTS.map(([k]) => [k, d3.sum(R, (r) => r[k] || 0)]));
-  const C = Object.fromEntries(PARTS.map(([k]) => [k, d3.sum(R, (r) => { const p = priceOf(r.model); return p ? (r[k] || 0) * (p[k] || 0) / 1e6 : 0; })]));
-  const save = d3.sum(R, (r) => { const p = priceOf(r.model); return p ? (r.cache_read || 0) * (p.input - p.cache_read) / 1e6 : 0; });
+  const C = Object.fromEntries(PARTS.map(([k]) => [k, d3.sum(R, (r) => { const p = priceOf(r.model, r.peak); return p ? (r[k] || 0) * (p[k] || 0) / 1e6 : 0; })]));
+  const save = d3.sum(R, (r) => { const p = priceOf(r.model, r.peak); return p ? (r.cache_read || 0) * (p.input - p.cache_read) / 1e6 : 0; });
   const inAll = T.input + T.cache_read + T.cache_write, total = inAll + T.output;
   $('mix-sub').textContent = rangeLabel();
   $('x-hit').textContent = inAll ? (100 * T.cache_read / inAll).toFixed(1) + '%' : '-';
@@ -922,12 +937,11 @@ $('themeBtn').onclick = () => {
 };
 addEventListener('hashchange', () => { readHash(); render(); if (st.view === 'rank') loadRanking(); });
 
-function draw() { refreshToolButtons(); writeHash(); segs(); chips(); limitsView(); ratioView(); hero(); hours(); daily(); mix(); cumulative(); monthly(); models(); projects(); }
-function render() { applyView(); if (st.view !== 'main') return; if (!DATA.daily.length) { showEmpty(); return; } $('main').hidden = false; $('empty-all').hidden = true; draw(); }
+function draw() { writeHash(); segs(); chips(); hero(); hours(); daily(); mix(); cumulative(); monthly(); models(); projects(); }
+function render() { applyView(); refreshToolButtons(); limitsView(); ratioView(); unpricedView(); if (st.view !== 'main') return; if (!DATA.daily.length) { showEmpty(); return; } $('main').hidden = false; $('empty-all').hidden = true; draw(); }
 function showEmpty() { $('main').hidden = true; $('empty-all').hidden = false; }
 
 // ---------- remaining limits (same numbers as the widget)
-const LNAME = { claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini' };
 const wl = (s) => s.replace('Weekly','주간').replace('5h','5시간').replace('Apps','앱');
 const sevOf = (u) => u >= 90 ? 'critical' : u >= 75 ? 'serious' : u >= 50 ? 'warning' : 'good';
 function untilTxt(ts) {
@@ -941,26 +955,82 @@ function resetTxt(ts) {
 const KO_MESSAGES = {"Model quota": "모델 한도", "Sign in with Google in Gemini CLI": "Gemini CLI에서 Google 로그인을 해주세요", "Run Gemini CLI to refresh your login": "Gemini CLI를 실행해 로그인 토큰을 갱신해주세요", "No quota information in the server response": "서버 응답에 한도 정보가 없습니다", "Model limits are reported by the app. Token usage is available only when the app records token counts.": "모델별 한도는 앱 조회값입니다. 앱에서 토큰 수를 제공하지 않는 대화의 토큰 사용량은 집계할 수 없습니다", "No model quotas in the app response": "앱 응답에 모델 한도 정보가 없습니다", "Start Antigravity to read model quotas. Usage requires token counts in app logs.": "Antigravity를 실행하면 모델별 한도를 조회합니다. 토큰 사용량은 앱 로그에 제공될 때만 집계합니다", "Could not fetch quotas. Check app login and running status.": "한도 조회 실패. 앱 로그인·실행 상태를 확인해주세요", "Web token usage and model quotas cannot be fetched automatically. CLI usage is separate.": "웹 대화의 토큰 사용량·모델별 잔여 한도는 자동 조회할 수 없습니다. CLI 사용량과 별개입니다", "Could not fetch limits for this app": "이 도구의 한도 조회에 실패했습니다", "Update check failed. Check your internet connection.": "업데이트 확인 실패. 인터넷 연결을 확인해주세요", "No ranking server configured": "랭킹 서버가 아직 설정되지 않았어요", "Invite code not found": "그런 초대 코드가 없어요", "Group is full (50 members maximum)": "그룹이 가득 찼어요 (최대 50명)", "Membership expired. Join the group again.": "그룹에서 나가졌어요. 다시 참가해 주세요", "Server error": "서버 오류", "Not in the public ranking": "아직 랭킹에 참여하지 않았어요", "The ranking server needs an update": "랭킹 서버가 아직 업데이트되지 않았어요. 잠시 후 다시 시도해 주세요", "Could not connect to the public ranking server. Update Token Tracker and check your connection.": "랭킹 서버에 연결할 수 없어요", "This PC could not verify the ranking server's certificate.": "이 PC에서 랭킹 서버 인증서를 확인하지 못했어요. 백신이나 회사·학교 네트워크가 연결을 가로채고 있을 수 있어요", "The ranking server took too long to answer. Try again in a moment.": "랭킹 서버 응답이 너무 늦어요. 잠시 후 다시 시도해 주세요", "You have not joined a group yet": "아직 그룹에 참가하지 않았어요", "User-": "쌀숭이-", "Claude Code login credentials were not found": "Claude Code 로그인 정보(.credentials.json)를 찾지 못했어요", "No OAuth token (API key login?)": "OAuth 토큰이 없어요 (API 키 로그인?)", "Sign in again with /login in Claude Code": "로그인이 풀렸어요. Claude Code에서 /login 을 한 번 해 주세요", "Token refresh failed (check your connection)": "토큰 갱신 실패 (인터넷 연결 확인)", "Login expired. Run Claude Code to refresh it.": "로그인 토큰 만료. Claude Code를 한 번 실행하면 갱신돼요", "Rate limited (showing cached values)": "조회가 너무 잦아 잠시 쉬는 중 (마지막 값 표시)", "Authentication failed. Sign in to Claude Code again.": "인증 실패 — Claude Code 재로그인 필요", "Connection failed:": "연결 실패:", "Reset": "리셋됨", "No quota information in Codex logs yet": "Codex 로그에 한도 정보가 아직 없어요", "Last Codex usage ({h}h ago)": "마지막 Codex 사용 기준 ({h}시간 전)", "Last Codex usage ({h // 24}d ago)": "마지막 Codex 사용 기준 ({h // 24}일 전)", "Weekly Opus": "주간 Opus", "Weekly Sonnet": "주간 Sonnet", "Weekly Apps": "주간 앱", "5h": "5시간", "Weekly": "주간", "Limit": "한도", "{m // 1440}d": "{m // 1440}일", "{round(m / 60)}h": "{round(m / 60)}시간"};
 const koMessage = text => KO_MESSAGES[text] || String(text).replace(/Last Codex usage \((\d+)h ago\)/,'마지막 Codex 사용 기준 ($1시간 전)').replace(/Last Codex usage \((\d+)d ago\)/,'마지막 Codex 사용 기준 ($1일 전)');
 let LIMITS = {};
-let SOURCE_SETTINGS = {sources: {}, source_names: {claude:'Claude Code',codex:'Codex',chatgpt:'ChatGPT',gemini:'Gemini CLI',antigravity:'Antigravity',gemini_web:'Gemini Web'}};
+let SOURCE_SETTINGS = { sources: {}, source_names: {}, source_meta: {} };
+const BUILTIN_SOURCES = new Set(['claude', 'codex', 'chatgpt', 'gemini', 'antigravity', 'gemini_web']);
+const COLOURED_SOURCES = new Set([...BUILTIN_SOURCES, 'deepseek']);
+function sourceNames() {
+  const meta = SOURCE_SETTINGS.source_meta || {};
+  const names = Object.assign(Object.create(null), Object.fromEntries(Object.entries(meta).map(([key, value]) => [key, value.name || key])));
+  Object.assign(names, SOURCE_SETTINGS.source_names || {});
+  // Old exports have only display names. Never guess which app supplied a missing tool.
+  if (!Object.keys(names).length) for (const row of DATA.daily) if (row.tool) names[row.tool] = row.tool;
+  return names;
+}
+function sourceKey(value) {
+  const names = sourceNames();
+  if (Object.hasOwn(names, value)) return value;
+  return Object.keys(names).find(key => names[key] === value) || value;
+}
+function sourceName(key) { return sourceNames()[key] || key || '알 수 없음'; }
+function sourceColor(key) {
+  key = String(key || 'other');
+  if (COLOURED_SOURCES.has(key)) return `var(--${key})`;
+  // Fixed, labelled palette: new keys never repaint any existing provider.
+  const hash = [...key].reduce((h, c) => (Math.imul(h, 31) + c.codePointAt(0)) >>> 0, 7);
+  return `var(--provider${hash % 8 + 1})`;
+}
+function subscriptionKeys() {
+  return Object.keys(SOURCE_SETTINGS.plan_options || {}).filter(key => BUILTIN_SOURCES.has(key) && SOURCE_SETTINGS.source_meta?.[key]?.kind !== 'payg');
+}
+function isNewSource(key) {
+  const meta = SOURCE_SETTINGS.source_meta?.[key], age = Date.now() / 1000 - Number(meta?.first_seen);
+  return !!meta?.detected && meta.first_seen != null && age >= 0 && age < 7 * 86400;
+}
+function sourceButton(key, name) {
+  const button = el('button'); button.type = 'button'; button.dataset.v = key;
+  button.setAttribute('aria-pressed', String(sourceKey(st.tool) === key));
+  if (key !== 'all') { const dot = el('i'); dot.style.background = sourceColor(key); button.append(dot); }
+  button.append(el('span', '', name));
+  if (isNewSource(key)) button.append(el('small', 'new-source', '새로 감지됨'));
+  return button;
+}
 function refreshToolButtons() {
-  const names = Object.entries(SOURCE_SETTINGS.source_names).filter(([key, name]) => {
-    if (SOURCE_SETTINGS.sources[key] === false) return false;
-    const limit = LIMITS[key] || {};
-    const connected = !['no_credentials','expired','auth','relogin','unsupported','no_data'].includes(limit.status) &&
-      ((limit.windows || []).length || (limit.accounts || []).some(a => a.windows && a.windows.length));
-    return connected || (DATA.daily_detail || []).some(row => row.tool === name);
-  }).map(([,name]) => name);
-  const tool = $('tool'); tool.replaceChildren();
-  for (const name of ['all', ...names]) {
-    const button = el('button', '', name === 'all' ? '전체' : name); button.type='button'; button.dataset.v=name; tool.append(button);
+  const names = Object.entries(sourceNames()).filter(([key]) => SOURCE_SETTINGS.sources?.[key] !== false);
+  const selected = sourceKey(st.tool);
+  // An empty registry may still be loading; retain the deep link until it arrives.
+  if (Object.keys(sourceNames()).length) st.tool = names.some(([key]) => key === selected) ? selected : 'all';
+  $('tool').replaceChildren(sourceButton('all', '전체'), ...names.map(([key, name]) => sourceButton(key, name)));
+  $('provider-legend').replaceChildren(...names.map(([key, name]) => {
+    const button = sourceButton(key, name);
+    button.onclick = () => { st.tool = st.tool === key ? 'all' : key; render(); }; return button;
+  }));
+}
+const ANNOUNCED_SOURCES = new Set();
+function sourceBanners() {
+  for (const [key, meta] of Object.entries(SOURCE_SETTINGS.source_meta || {})) {
+    if (!meta.detected || ANNOUNCED_SOURCES.has(key)) continue;
+    ANNOUNCED_SOURCES.add(key);
+    const storageKey = 'tt-source-seen:' + key;
+    try { if (localStorage.getItem(storageKey)) continue; localStorage.setItem(storageKey, '1'); } catch (e) {}
+    const banner = el('div', 'card source-banner');
+    banner.append(el('span', '', `새 AI 감지: ${sourceName(key)} — 사용량을 따로 집계해요`));
+    const close = el('button', 'btn', '닫기'); close.type = 'button'; close.setAttribute('aria-label', `${sourceName(key)} 감지 알림 닫기`);
+    close.onclick = () => banner.remove(); banner.append(close); $('source-banners').append(banner);
   }
-  if (st.tool !== 'all' && !names.includes(st.tool)) st.tool='all';
+}
+function unpricedView() {
+  const rows = (DATA.unpriced || []).filter(passTool), note = $('unpriced-note');
+  note.textContent = rows.length ? '가격 미확인 모델(비용 제외): ' + rows.map(row => `${row.model} ${tok(row.tokens || 0)} 토큰`).join(' · ') : '';
+  note.hidden = st.view !== 'main' || !rows.length;
 }
 
 function settingsView() {
   const form = $('settingsForm'), widget = SOURCE_SETTINGS.widget || {}, subs = SOURCE_SETTINGS.subscription_usd_month || {};
-  for (const key of ['claude','codex','gemini']) {
-    const select=form.elements[key], options=SOURCE_SETTINGS.plan_options?.[key] || {};
+  const planBox = $('subscriptionPlans'); planBox.replaceChildren();
+  for (const key of subscriptionKeys()) {
+    const label = el('label', '', sourceName(key)), select = el('select'); select.name = key; select.className = 'subscription-plan';
+    label.append(select); planBox.append(label);
+    const options=SOURCE_SETTINGS.plan_options?.[key] || {};
     select.replaceChildren(new Option('자동 감지','auto'));
     for (const [id,[name,price]] of Object.entries(options)) {
       const label=name.replace(' (annual)',' · 연간 결제').replace('Other plan','기타 요금제');
@@ -973,12 +1043,13 @@ function settingsView() {
   }
   const accounts=(SOURCE_SETTINGS.codex_accounts || []).filter(a=>a.key !== 'unknown'), accountBox=$('codexAccountPlans');
   accountBox.replaceChildren(); accountBox.hidden=!accounts.length;
-  form.elements.codex.closest('label').hidden=!!accounts.length;
+  const codexSelect = planBox.querySelector('select[name="codex"]');
+  if (codexSelect) codexSelect.closest('label').hidden=!!accounts.length;
   for (const account of accounts) {
     const label=el('label'), select=el('select'); select.className='account-plan'; select.dataset.key=account.key;
     label.append(`${account.label} · 감지: ${account.detected_plan || '요금제 미확인'}`);
     select.append(new Option('자동 감지','auto'));
-    for (const [id,[name,price]] of Object.entries(SOURCE_SETTINGS.plan_options.codex))
+    for (const [id,[name,price]] of Object.entries(SOURCE_SETTINGS.plan_options?.codex || {}))
       select.append(new Option(`${name.replace(' (annual)',' · 연간 결제')} · ${price == null ? '가격 미확인' : price === 0 ? '무료' : usd(price)+'/월'}`,id));
     select.value=SOURCE_SETTINGS.account_plans?.codex?.[account.key] || (accounts.length===1 ? SOURCE_SETTINGS.subscription_plans?.codex : null) || 'auto'; label.append(select); accountBox.append(label);
   }
@@ -994,7 +1065,7 @@ $('settingsBack').onclick = () => { st.view='main'; writeHash(); render(); scrol
 $('settingsForm').onsubmit = async event => {
   event.preventDefault(); const form=event.currentTarget;
   const body={subscription_plans:{},widget:{},auto_update:form.elements.auto_update.checked};
-  for (const key of ['claude','codex','gemini']) body.subscription_plans[key]=form.elements[key].value;
+  for (const select of form.querySelectorAll('.subscription-plan')) body.subscription_plans[select.name]=select.value;
   const accountSelects=form.querySelectorAll('.account-plan');
   if (accountSelects.length) {
     delete body.subscription_plans.codex; body.account_plans={codex:{}};
@@ -1017,11 +1088,13 @@ async function loadSettings() {
     if (!response.ok) return;
     SOURCE_SETTINGS = await response.json();
     const form = $('sourceForm'); form.replaceChildren();
-    for (const [key, name] of Object.entries(SOURCE_SETTINGS.source_names)) {
+    for (const [key, name] of Object.entries(sourceNames())) {
       const label = el('label'); const input = el('input'); input.type = 'checkbox'; input.name = key;
-      input.checked = SOURCE_SETTINGS.sources[key] !== false; label.append(input, ' ' + name); form.append(label);
+      input.checked = SOURCE_SETTINGS.sources?.[key] !== false; label.append(input, ' ' + name);
+      if (isNewSource(key)) label.append(' ', el('small', 'new-source', '새로 감지됨'));
+      form.append(label);
     }
-    refreshToolButtons(); settingsView();
+    refreshToolButtons(); sourceBanners(); settingsView();
   } catch (e) { $('status').textContent='도구 설정을 읽지 못했습니다'; }
 }
 $('sourceForm').onchange = async () => {
@@ -1032,15 +1105,33 @@ $('sourceForm').onchange = async () => {
 };
 function limitsView() {
   const box = $('limits'); const cards = [];
-  for (const [src, name] of Object.entries(SOURCE_SETTINGS.source_names)) {
-    if (SOURCE_SETTINGS.sources[src] === false) continue;
-    const l = LIMITS[src] || {};
+  for (const [src, name] of Object.entries(sourceNames())) {
+    if (SOURCE_SETTINGS.sources?.[src] === false || (st.tool !== 'all' && sourceKey(st.tool) !== src)) continue;
+    const l = LIMITS[src];
+    if (!l) continue;
+    if (src === 'deepseek') {
+      const c = el('section', 'card lim'), h = el('div', 'lim-h'), dot = el('i'); dot.style.background = sourceColor(src);
+      h.append(dot, el('b', '', name));
+      if (l.checked_at) h.append(el('span', 'asof', tfmt(new Date(l.checked_at * 1000)) + ' 기준'));
+      c.append(h);
+      if (l.status === 'ok') {
+        for (const balance of l.balance || []) {
+          const total = Number(balance.total);
+          if (!Number.isFinite(total)) continue;
+          const currency = balance.currency || 'USD';
+          const amount = (currency === 'USD' ? '$' : currency === 'CNY' ? '¥' : currency + ' ') + total.toFixed(2);
+          c.append(el('div', 'lw', `잔액 ${amount} · ${currency}`));
+        }
+        c.append(el('div', 'msg', l.available === true ? '사용 가능' : l.available === false ? '사용 불가' : '사용 가능 여부 미확인'));
+      } else c.append(el('div', 'msg', ({auth:'인증 확인 필요',offline:'연결할 수 없어요',error:'잔액 조회 실패'})[l.status] || '잔액 조회 중…'));
+      if (l.message) c.append(el('div', 'msg', koMessage(l.message)));
+      cards.push(c); continue;
+    }
     if (['no_credentials','expired','auth','relogin','unsupported','no_data'].includes(l.status)) continue;
     const accts = l.accounts && l.accounts.length ? l.accounts : [{ plan: l.plan, windows: l.windows || [], fetched_at: l.fetched_at }];
-    if (st.tool !== 'all' && name !== st.tool) continue;
     for (const a of accts) {
-      if (!a.windows.length) continue;
-      const c = el('section', 'card lim'); const h = el('div', 'lim-h'); const dot = el('i'); dot.style.background = `var(--${src})`;
+      if (!a.windows?.length) continue;
+      const c = el('section', 'card lim'); const h = el('div', 'lim-h'); const dot = el('i'); dot.style.background = sourceColor(src);
       h.append(dot, el('b', '', name)); if (a.plan) h.append(el('span', 'plan', a.plan));
       if (a.fetched_at) h.append(el('span', 'asof', tfmt(new Date(a.fetched_at * 1000)) + ' 기준'));
       c.append(h);
@@ -1050,7 +1141,7 @@ function limitsView() {
         r.append(el('span', '', wl(w.label)), el('small', '', w.resets_at ? resetTxt(w.resets_at) : koMessage(w.note || '')));
         const big = el('strong', '', Math.round(left) + '%'); if (used >= 75) big.style.color = `var(--${sv})`; r.append(big);
         const tr = el('div', 'track'); const fill = el('i'); fill.style.width = Math.max(0, Math.min(100, left)) + '%';
-        fill.style.background = used < 50 ? `var(--${src})` : `var(--${sv})`; tr.append(fill);
+        fill.style.background = used < 50 ? sourceColor(src) : `var(--${sv})`; tr.append(fill);
         const pace = paceLeft(w);
         if (pace != null) {
           const mark = el('b'); mark.style.left = (100 * pace) + '%'; tr.append(mark);
@@ -1081,33 +1172,34 @@ async function loadLimits() {
 }
 
 // ---------- 쌀먹 비율
-const TOOLC = { claude: 'var(--claude)', codex: 'var(--codex)', gemini: 'var(--gemini)' };
-const TOOLN = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini' };
 const PLABEL = { day: '오늘', week: '이번 주', month: '이번 달' };
 const xfmt = (r) => r == null ? '-' : r >= 100 ? Math.round(r).toString() : r >= 10 ? r.toFixed(1) : r.toFixed(2);
 let RATIO = null;
 function ratioView() {
   const card = $('ratio-card');
   const P = RATIO && RATIO.periods && RATIO.periods[st.rp];
-  const any = RATIO && Object.values(RATIO.periods || {}).some((v) => Object.keys(v.tools).length);
+  const any = RATIO && Object.values(RATIO.periods || {}).some(v => Object.keys(v.tools || {}).length || Object.keys(v.payg || {}).length);
   card.hidden = st.view !== 'main' || !any;
   if (card.hidden || !P) return;
   document.querySelectorAll('#rperiod button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === st.rp)));
   $('r-v').textContent = P.ratio == null ? '×-' : '×' + xfmt(P.ratio);
   $('r-sub').replaceChildren(`${PLABEL[st.rp]} 구독 `, el('b', '', usd(P.sub)), '로 ', el('b', '', usd(P.api)), '어치 사용');
-  const toolLabel=t => (t.label || TOOLN[t.source]).replace('account unknown','계정 미확인');
-  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `무료·가격 또는 계정 미확인으로 합계 배율에서 제외: ${P.excluded.map(key => toolLabel(P.tools[key])).join(', ')}. 확인된 계정은 각각 계산합니다.` : '';
+  const toolLabel = (t = {}, key = '') => String(t.label || sourceName(t.source || key)).replace('account unknown','계정 미확인');
+  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `무료·가격 또는 계정 미확인으로 합계 배율에서 제외: ${P.excluded.map(key => toolLabel(P.tools?.[key], key)).join(', ')}. 확인된 계정은 각각 계산합니다.` : '';
+  const payg = Object.entries(P.payg || {}), paygLine = $('ratio-payg');
+  paygLine.textContent = payg.length ? '종량제 API(실제 지출, 배율 제외): ' + payg.map(([key, t]) => `${toolLabel(t, key)} ${usd(t.api)}`).join(' · ') : '';
+  paygLine.hidden = !payg.length;
   const gain = P.api - P.sub, g = $('r-gain');
   g.textContent = P.sub ? (gain >= 0 ? `${usd(gain)} 이득` : `${usd(-gain)} 덜 씀`) : '구독료를 알 수 없어요';
   g.className = 'gain' + (gain >= 0 && P.sub ? '' : ' loss');
-  const tools = Object.entries(P.tools);
+  const tools = Object.entries(P.tools || {}).filter(([key, t]) => !Object.hasOwn(P.payg || {}, key) && SOURCE_SETTINGS.source_meta?.[t.source || key]?.kind !== 'payg');
   const mx = (d3.max(tools, ([, t]) => Math.max(t.api, t.sub)) || 1) * 1.08;
   $('r-rows').replaceChildren(...tools.map(([src, t]) => {
-    const row = el('div', 'rrow'); const nm = el('div', 'nm'); const top = el('div'); const i = el('i'); i.style.background = TOOLC[src];
-    const source=t.source || src; i.style.background=TOOLC[source];
-    top.append(i, el('b', '', toolLabel(t))); if (t.plan) top.append(el('span', 'plan', t.plan));
+    const row = el('div', 'rrow'); const nm = el('div', 'nm'); const top = el('div'); const i = el('i');
+    const source=t.source || src; i.style.background=sourceColor(source);
+    top.append(i, el('b', '', toolLabel(t, src))); if (t.plan) top.append(el('span', 'plan', t.plan));
     nm.append(top, el('small', '', t.monthly ? `${t.from === 'selection' ? '선택한 요금제' : t.from === 'config' ? '기존 설정' : '감지한 요금제'} ${usd(t.monthly)}/월` : t.monthly === 0 ? '무료 요금제' : t.label?.includes('account unknown') ? '로그에 계정 ID 없음 · 배율에서 제외' : '가격 미확인 · 설정에서 요금제 선택'));
-    const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (100 * t.api / mx) + '%'; f.style.background = TOOLC[source]; bar.append(f);
+    const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (100 * t.api / mx) + '%'; f.style.background = sourceColor(source); bar.append(f);
     if (t.sub) { const m = el('em'); m.style.left = (100 * t.sub / mx) + '%'; m.title = '구독료 (본전)'; bar.append(m); }
     const amt = el('span', 'amt'); amt.append(el('b', '', usd(t.api)), ' / ' + (t.sub ? usd(t.sub) : '-'));
     row.append(nm, bar, amt, el('span', 'x' + (t.ratio == null ? ' dim' : ''), t.ratio == null ? '-' : '×' + xfmt(t.ratio)));
@@ -1132,7 +1224,9 @@ function applyView() {
   const b = $('viewBtn');
   b.lastChild.textContent = other ? '대시보드' : '랭킹';
   if (!rank) $('party').hidden = true;
-  b.querySelector('svg').innerHTML = rank ? '<path d="M10 3 5 8l5 5"/>' : '<path d="M5 14h6M8 11v3M4.5 2h7v3.5a3.5 3.5 0 0 1-7 0zM4.5 3.5H2.5v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2"/>';
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', rank ? 'M10 3 5 8l5 5' : 'M5 14h6M8 11v3M4.5 2h7v3.5a3.5 3.5 0 0 1-7 0zM4.5 3.5H2.5v1a2 2 0 0 0 2 2M11.5 3.5h2v1a2 2 0 0 1-2 2');
+  b.querySelector('svg').replaceChildren(path);
   b.setAttribute('href', other ? '#' : '#v=rank');
   document.title = settings ? '설정 · 토큰 트래커' : rank ? '랭킹 · 토큰 트래커' : '토큰 트래커';
 }
@@ -1224,7 +1318,9 @@ function globalView() {
       privacy.append(el('h3', '', title));
       for (const line of lines) { const p = el('p'), icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         icon.setAttribute('viewBox', '0 0 16 16'); icon.setAttribute('aria-hidden', 'true');
-        icon.innerHTML = `<path d="${send ? 'M3 8l3 3 7-7' : 'M4 4l8 8M12 4l-8 8'}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        for (const [key, value] of Object.entries({d:send ? 'M3 8l3 3 7-7' : 'M4 4l8 8M12 4l-8 8',fill:'none',stroke:'currentColor','stroke-width':'1.5','stroke-linecap':'round'})) path.setAttribute(key, value);
+        icon.append(path);
         p.append(icon, line); privacy.append(p); }
     }
     const wrap = el('div', 'global-intro'); wrap.append(left, privacy);
@@ -1292,17 +1388,23 @@ async function loadRanking() {
   st.rankTab = chooseRankTab(state, st.rankTab, remembered);
   try { localStorage.setItem('tt-rank-tab', st.rankTab); } catch (e) {}
   writeHash(); rankTabs();
-  // Each membership is independent; read the others for accurate tab badges too.
+  // Serialize badge reads: the first refresh syncs all memberships; the rest reuse that sync.
   for (const group of state.groups || []) {
     if (group.code === st.rankTab) continue;
-    fetch('/api/ranking?code=' + encodeURIComponent(group.code) + '&period=' + st.rk, { cache: 'no-store' })
-      .then(r => r.json()).then(result => { if (request !== rankRequest) return;
-        if (result.members) { GROUP_COUNTS.set(group.code, result.members.length); rankTabs(); } }).catch(() => {});
+    try {
+      const result = await (await fetch('/api/ranking?code=' + encodeURIComponent(group.code) + '&period=' + st.rk, { cache: 'no-store' })).json();
+      if (request !== rankRequest) return;
+      if (result.members) { GROUP_COUNTS.set(group.code, result.members.length); rankTabs(); }
+    } catch (e) {}
+    if (request !== rankRequest) return;
   }
   if (st.rankTab !== 'global' && state.global?.joined) {
-    fetch('/api/ranking/global?period=' + st.rk, { cache: 'no-store' }).then(r => r.json()).then(result => {
-      if (request !== rankRequest) return; GRANK = result; rankTabs();
-    }).catch(() => {});
+    try {
+      const result = await (await fetch('/api/ranking/global?period=' + st.rk, { cache: 'no-store' })).json();
+      if (request !== rankRequest) return;
+      GRANK = result; rankTabs();
+    } catch (e) {}
+    if (request !== rankRequest) return;
   }
   if (st.rankTab === 'global') return loadGlobal(request);
   const card = $('rank-card');
@@ -1467,8 +1569,9 @@ async function load(quiet) {
     const r = await fetch('/api/data', { cache: 'no-store' });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
-    DATA = { daily: d.daily_detail || [], hours: d.hours_detail || [], prices: d.prices || {} };
-    prepare(); render();
+    DATA = { daily: d.daily_detail || d.daily || [], hours: d.hours_detail || d.hours || [], prices: d.prices || {}, unpriced: d.unpriced || [] };
+    if (d.meta?.source_meta) SOURCE_SETTINGS.source_meta = d.meta.source_meta;
+    sourceBanners(); prepare(); render();
     const t = d.meta && d.meta.last_scan;
     $('status').textContent = t ? `${tfmt(new Date(t * 1000))} 업데이트` : '업데이트됨';
   } catch (e) {
@@ -1478,7 +1581,7 @@ async function load(quiet) {
 $('refreshBtn').onclick = async () => {
   const b = $('refreshBtn'); b.disabled = true; $('status').textContent = '다시 읽는 중…';
   try { await fetch('/api/refresh', { method: 'POST' }); } catch (e) {}
-  await Promise.all([load(), loadLimits(), loadRatio()]); if (st.view === 'rank') await loadRanking(); b.disabled = false;
+  await loadSettings(); await Promise.all([load(), loadLimits(), loadRatio()]); if (st.view === 'rank') await loadRanking(); b.disabled = false;
 };
 $('updateBtn').onclick = async () => {
   const button = $('updateBtn'); button.disabled=true; button.textContent='확인 중…';
@@ -1509,7 +1612,7 @@ $('updateBtn').onclick = async () => {
 };
 $('empty-all').textContent='사용량 기록을 읽는 중…';
 loadSettings().then(() => { load(); loadLimits(); loadRatio(); applyView(); if (st.view === 'rank') loadRanking(); });
-setInterval(() => { if (!document.hidden) { load(true); loadLimits(); loadRatio(); if (st.view === 'rank') loadRanking(); } }, 60000);
+setInterval(async () => { if (!document.hidden) { if (st.view !== 'settings') await loadSettings(); load(true); loadLimits(); loadRatio(); if (st.view === 'rank') loadRanking(); } }, 60000);
 document.querySelectorAll('.card').forEach((c, i) => { c.classList.add('fade'); c.style.animationDelay = Math.min(i, 8) * 30 + 'ms'; });
 let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
 </script>

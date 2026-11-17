@@ -8,6 +8,8 @@ On Windows the bar also has a taskbar button whose icon is a gauge with the lowe
 5-hour remaining %, so the numbers stay visible while the bar is minimized.
 """
 import base64
+import hashlib
+import math
 import os
 import sys
 import threading
@@ -15,18 +17,46 @@ import time
 import tkinter as tk
 import tkinter.font as tkfont
 import webbrowser
+from urllib.parse import urlparse
 
-from . import icon, paths, updater
-from .sources import NAMES, enabled, connected
+from . import icon, paths, sources, updater
+from .sources import enabled, connected
 
 C = {
     "bg": "#141416", "edge": "#2e2e33", "ink": "#f4f4f5", "ink2": "#a1a1aa", "muted": "#6b6b73",
     "track": "#2e2e33", "pill": "#26262b", "tip": "#1c1c1f", "menu_hi": "#2b2b30",
     "claude": "#e8794a", "codex": "#5b9cf5", "gemini": "#34c08b",
     "antigravity": "#34c08b", "chatgpt": "#5b9cf5", "gemini_web": "#34c08b",
+    "deepseek": "#8b9bff",
     "good": "#3fb950", "warning": "#e3b341", "serious": "#f0883e", "critical": "#f85149",
 }
-SHORT = {**NAMES, 'claude': 'Claude', 'gemini': 'Gemini CLI'}
+SHORT = {**sources.BUILTIN, 'claude': 'Claude', 'gemini': 'Gemini CLI'}
+PROVIDER_COLORS = ('#c084fc', '#2dd4bf', '#f472b6', '#a3c95b', '#f0b86a', '#67c8e4')
+
+
+def source_color(src):
+    if src in C:
+        return C[src]
+    index = int.from_bytes(hashlib.sha256(src.encode('utf-8')).digest()[:4], 'big')
+    return PROVIDER_COLORS[index % len(PROVIDER_COLORS)]
+
+
+def short_name(src):
+    return SHORT.get(src) or sources.display_name(src)
+
+
+def balance_text(lim):
+    amounts = []
+    for row in lim.get('balance') or []:
+        try:
+            total = float(row['total'])
+            currency = row['currency']
+            if math.isfinite(total) and currency in ('USD', 'CNY'):
+                symbol = '$' if currency == 'USD' else '¥'
+                amounts.append(f'{symbol}{total:.2f}')
+        except (ValueError, TypeError, KeyError):
+            continue
+    return ' / '.join(amounts)
 
 
 def window_letter(w):
@@ -129,7 +159,7 @@ def sev(used):
 
 def ring_color(src, used):
     """Healthy windows wear the tool's color; from half used on, the warning scale takes over."""
-    return C[src] if used < 50 else C[sev(used)]
+    return source_color(src) if used < 50 else C[sev(used)]
 
 
 def num_color(used):
@@ -305,6 +335,7 @@ class Widget:
         wc = self.cfg.setdefault("widget", {})
         self.show = enabled(self.cfg)
         self._source_selection = tuple(self.show)
+        self._noted_sources = set()
         self.taskbar = bool(wc.get("taskbar", True)) and Win.ok       # Windows taskbar button
         self.live_icon = bool(wc.get("taskbar", True)) and (Win.ok or MAC)  # gauge on the taskbar / Dock icon
         Win.dpi_aware()
@@ -407,8 +438,11 @@ class Widget:
         self.root.geometry(f"+{e.x_root - self._dx}+{e.y_root - self._dy}")
 
     def _drag_end(self, e):
-        self.cfg["widget"]["x"], self.cfg["widget"]["y"] = self.root.winfo_x(), self.root.winfo_y()
-        paths.save_config(self.cfg)
+        x, y = self.root.winfo_x(), self.root.winfo_y()
+        self.cfg["widget"]["x"], self.cfg["widget"]["y"] = x, y
+        # only the position: self.cfg can be up to a second old, and saving all of it would
+        # undo a ranking join or settings change made in the dashboard meanwhile
+        paths.update_config(lambda cfg: cfg.setdefault("widget", {}).update(x=x, y=y))
 
     # --------------------------------------------------------------- actions
     def open_dashboard(self):
@@ -470,7 +504,7 @@ class Widget:
         v = bool(self._top.get())
         self.root.attributes("-topmost", v)
         self.cfg["widget"]["topmost"] = v
-        paths.save_config(self.cfg)
+        paths.update_config(lambda cfg: cfg.setdefault("widget", {}).update(topmost=v))
 
     def _note(self, text, ms=6000):
         """Short status text at the end of the bar ('Refreshing…', update results)."""
@@ -540,16 +574,10 @@ class Widget:
         threading.Thread(target=work, daemon=True).start()
 
     def _restart(self):
-        httpd = getattr(self.engine, "httpd", None)
-        if httpd is not None:  # free the port now; the new copy would otherwise wait for it
-            try:
-                httpd.shutdown()
-                httpd.server_close()
-            except Exception:
-                pass
         try:
             updater.log("restarting")
-            updater.restart()
+            # The child waits for our lock and port; a failed spawn leaves this dashboard alive.
+            updater.restart(urlparse(self.url).port or 80)
         except OSError:
             self._note("Update ready. Restart to apply", 15000)
             return
@@ -601,6 +629,26 @@ class Widget:
         tightest = max(wins, key=lambda w: float(w.get('used_percent') or 0))
         return [dict(tightest, label='Lowest remaining')]
 
+    def _visible_limits(self, limits):
+        names = sources.names()
+        registered = set(names)
+        # An API balance can be connected before the first model appears in local logs.
+        for src, lim in limits.items():
+            if balance_text(lim):
+                names.setdefault(src, sources.display_name(src))
+        for src, name in names.items():
+            lim = limits.get(src) or {}
+            selected = src in self.show or (src not in registered and
+                self.cfg.get('sources', {}).get(src, True))
+            if selected and (connected(lim) or needs_signin(src, lim) or balance_text(lim)):
+                yield src, name, lim
+
+    def _notify_sources(self, snap):
+        new = [key for key in snap.get('new_sources', []) if key not in self._noted_sources]
+        if new:
+            self._noted_sources.update(new)
+            self._note('New AI detected: ' + ', '.join(sources.display_name(key) for key in new), 10000)
+
     # ------------------------------------------------------------------ draw
     def _tick(self):
         snap = self.engine.snapshot
@@ -637,6 +685,7 @@ class Widget:
         snap = self.engine.snapshot
         self._last_draw = snap.get("updated", 0)
         self._last_min = int(time.time() // 60)
+        self._notify_sources(snap)
         for w in self.bar.winfo_children():
             w.destroy()
         limits = snap.get("limits") or {}
@@ -647,18 +696,23 @@ class Widget:
         strut.pack(side="left")
         self._bind_drag(strut)
         first = True
-        for src in NAMES:
-            lim_src = limits.get(src) or {}
-            if src not in self.show or not (connected(lim_src) or needs_signin(src, lim_src)):
-                continue
+        for src, name, lim_src in self._visible_limits(limits):
             if not first:
                 sep = tk.Frame(self.bar, bg=C["edge"], width=1, height=16)
                 sep.pack(side="left", padx=12)
                 self._bind_drag(sep)
             first = False
+            balance = balance_text(lim_src)
+            if balance and not self._accounts(lim_src):
+                label = tk.Label(self.bar, text=f'{name} {balance}', bg=C['bg'],
+                                 fg=source_color(src) if lim_src.get('available', True) else C['muted'],
+                                 font=(FONT, 10))
+                label.pack(side='left')
+                self._bind_drag(label)
+                continue
             if needs_signin(src, lim_src) and not connected(lim_src):
                 parts = [tk.Label(self.bar, image=self._ring(0, C["track"]), bg=C["bg"]),
-                         tk.Label(self.bar, text=SHORT[src], bg=C["bg"], fg=C["ink2"], font=(FONT, 10)),
+                         tk.Label(self.bar, text=short_name(src), bg=C["bg"], fg=C["ink2"], font=(FONT, 10)),
                          tk.Label(self.bar, text="Sign in", bg=C["bg"], fg=C["ink"], cursor="hand2",
                                   font=(FONT, 10, "underline"))]
                 parts[0].pack(side="left")
@@ -681,7 +735,7 @@ class Widget:
                 gauge.create_text(GAUGE / 2, GAUGE / 2, text=letter, fill=ring_color(src, used),
                                   font=(NUM_FONT, -10, "bold"))
             parts = [gauge,
-                     tk.Label(self.bar, text=SHORT[src], bg=C["bg"], fg=C["ink2"], font=(FONT, 10)),
+                     tk.Label(self.bar, text=short_name(src), bg=C["bg"], fg=C["ink2"], font=(FONT, 10)),
                      tk.Label(self.bar, text="—" if used is None else f"{100 - used:.0f}%", bg=C["bg"],
                               fg=C["muted"] if used is None else num_color(used), font=(NUM_FONT, 11, "bold"))]
             parts[0].pack(side="left", pady=(0, 0))
@@ -758,15 +812,22 @@ class Widget:
             return lb
 
         first = True
-        for src in NAMES:
-            lim = limits.get(src) or {}
-            if src not in self.show or not (connected(lim) or needs_signin(src, lim)):
+        for src, name, lim in self._visible_limits(limits):
+            balance = balance_text(lim)
+            if balance and not self._accounts(lim):
+                lab(inner, f'{name} {balance}', C['ink'], 9, True, anchor='w',
+                    pady=(0 if first else 10, 2))
+                first = False
+                if not lim.get('available', True):
+                    lab(inner, 'Balance unavailable for use', C['muted'], 8, anchor='w')
+                if lim.get('status') in STATUS:
+                    lab(inner, lim.get('message') or STATUS[lim['status']], C['muted'], 8, anchor='w')
                 continue
             if needs_signin(src, lim):
                 head = tk.Frame(inner, bg=C["tip"])
                 head.pack(fill="x", pady=(0 if first else 10, 2))
                 first = False
-                lab(head, NAMES[src], C["ink"], 9, True, side="left")
+                lab(head, name, C["ink"], 9, True, side="left")
                 lab(inner, "Sign-in ended because Claude Code wasn't used for a while.", C["muted"], 8, anchor="w")
                 link = lab(inner, "Sign in to Claude  →", C["ink"], 9, True, anchor="w", pady=(3, 0))
                 link.configure(cursor="hand2")
@@ -778,9 +839,9 @@ class Widget:
                 head.pack(fill="x", pady=(0 if first else 10, 2))
                 first = False
                 dot = tk.Canvas(head, width=8, height=8, bg=C["tip"], highlightthickness=0)
-                dot.create_oval(0, 0, 7, 7, fill=C[src], outline="")
+                dot.create_oval(0, 0, 7, 7, fill=source_color(src), outline="")
                 dot.pack(side="left", pady=(1, 0))
-                lab(head, NAMES[src], C["ink"], 9, True, side="left", padx=(7, 0))
+                lab(head, name, C["ink"], 9, True, side="left", padx=(7, 0))
                 if plan:
                     tk.Label(head, text=plan, bg=C["pill"], fg=C["ink2"], font=(FONT, 8), padx=6).pack(side="left", padx=(8, 0))
                 if not wins:
@@ -827,14 +888,18 @@ class Widget:
     def _taskbar_status(self, limits):
         """Show the most available tool, after each tool's restrictive quota is applied."""
         parts, best = [], None
-        for src in NAMES:
-            if src not in self.show or not connected(limits.get(src) or {}):
+        for src, name, lim in self._visible_limits(limits):
+            balance = balance_text(lim)
+            if balance and not self._accounts(lim):
+                parts.append(f'{name} {balance}')
                 continue
-            w = self._five_hour(limits.get(src) or {})
+            if not connected(lim):
+                continue
+            w = self._five_hour(lim)
             if not w:
                 continue
             used = float(w["used_percent"])
-            parts.append(f"{SHORT[src]} {max(0, 100 - used):.0f}%")
+            parts.append(f"{short_name(src)} {max(0, 100 - used):.0f}%")
             if best is None or used < best[0]:
                 best = (used, src)
         self.root.title('Token Tracker · ' + ' · '.join(parts) if parts else 'Token Tracker')

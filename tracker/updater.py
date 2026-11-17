@@ -4,7 +4,7 @@ The widget checks the VERSION file on GitHub a little after start and then every
 When it is newer, the repository zip is downloaded, checked, and copied over this folder
 (your records and settings live elsewhere, in %LOCALAPPDATA%\\TokenTracker), then the app
 restarts itself. A folder cloned with git is updated with `git pull --ff-only` instead, so
-git keeps tracking it; without git installed it falls back to the zip.
+git keeps tracking it; without git installed the update is refused.
 """
 import io
 import os
@@ -96,32 +96,80 @@ def apply(expected):
     if _tuple(got) < _tuple(expected):
         raise RuntimeError("GitHub is still publishing this version, try again in a few minutes")
     with tempfile.TemporaryDirectory(dir=paths.data_dir()) as tmp:
+        new = Path(tmp) / "new"
         for n in names:
             rel = n[len(top):]
             if not rel or n.endswith("/") or ".." in rel.split("/"):
                 continue
-            dst = os.path.join(tmp, *rel.split("/"))
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            dst = new.joinpath(*rel.split("/"))
+            dst.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(n) as src, open(dst, "wb") as out:
                 shutil.copyfileobj(src, out)
         # everything is unpacked; now swap files in one quick pass
-        for base, _, files in os.walk(tmp):
-            for f in files:
-                src = os.path.join(base, f)
-                rel = os.path.relpath(src, tmp)
-                dst = _root() / rel
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    shutil.copy2(src, dst)
-                except PermissionError:
-                    # a running exe can't be overwritten on Windows, but it can be renamed aside
-                    aside = dst.with_name(dst.name + ".old")
-                    try:
-                        aside.unlink()
-                    except OSError:
-                        pass
-                    os.replace(dst, aside)
-                    shutil.copy2(src, dst)
+        _swap_in(new, _root(), Path(tmp) / "backup")
+
+
+def _replace_file(src, dst):
+    """Put a copy of src at dst in one step. Returns where a running exe was renamed aside
+    (it can't be overwritten on Windows, but it can be renamed), else None."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    part = dst.with_name(dst.name + ".part")
+    try:
+        shutil.copy2(src, part)
+        try:
+            os.replace(part, dst)
+            return None
+        except PermissionError:
+            aside = dst.with_name(dst.name + ".old")
+            try:
+                aside.unlink()
+            except OSError:
+                pass
+            os.replace(dst, aside)
+            try:
+                os.replace(part, dst)
+            except OSError:
+                os.replace(aside, dst)
+                raise
+            return aside
+    finally:
+        try:
+            part.unlink()
+        except OSError:
+            pass
+
+
+def _swap_in(new, root, backup):
+    """Copy every file under new over root, all or nothing.
+
+    Each file it replaces is backed up first; if any copy fails, the files already swapped are
+    put back and the error is raised, so a half-updated folder never runs. VERSION goes last:
+    as long as it still says the old version, the update is offered (and tried) again."""
+    files = sorted((p.relative_to(new) for p in new.rglob("*") if p.is_file()),
+                   key=lambda rel: rel.as_posix() == "VERSION")
+    done = []  # (installed file, its backup or None when it is new, exe renamed aside or None)
+    try:
+        for rel in files:
+            dst = root / rel
+            saved = None
+            if dst.exists():
+                saved = backup / rel
+                saved.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(dst, saved)
+            done.append((dst, saved, None))
+            done[-1] = (dst, saved, _replace_file(new / rel, dst))
+    except BaseException:
+        for dst, saved, aside in reversed(done):
+            try:
+                if aside is not None:
+                    os.replace(aside, dst)  # the original exe, renamed aside while it ran
+                elif saved is not None:
+                    _replace_file(saved, dst)
+                elif dst.exists():
+                    dst.unlink()
+            except OSError as e:
+                log(f"rollback could not restore {dst}: {e}")
+        raise
 
 
 def _git(*args):
@@ -136,7 +184,9 @@ def _git(*args):
 
 def install(expected):
     """Bring this folder to the newest version, the way that fits how it was installed."""
-    if is_git_checkout() and shutil.which("git"):
+    if is_git_checkout():
+        if not shutil.which("git"):
+            raise RuntimeError("git is not installed; update with git pull")
         if _git("status", "--porcelain", "--untracked-files=no").strip():
             raise RuntimeError("local file changes; commit or discard them first")
         _git("pull", "--ff-only", "origin", "main")
@@ -156,11 +206,11 @@ def _python():
     return w if os.name == "nt" and os.path.exists(w) else exe
 
 
-def restart():
+def restart(port):
     """Start a fresh copy that waits for this one to close, then let the caller exit."""
     exe = _python()  # from an exe, continue with Python: the exe still holds the old code
     flags = 0
     if os.name == "nt":
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-    subprocess.Popen([exe, str(_root() / "app.py"), "--wait-port"], cwd=str(_root()),
+    subprocess.Popen([exe, str(_root() / "app.py"), "--wait-port", "--port", str(port)], cwd=str(_root()),
                      creationflags=flags, close_fds=True)

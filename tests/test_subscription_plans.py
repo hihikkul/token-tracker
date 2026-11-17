@@ -28,7 +28,8 @@ class SubscriptionPlans(unittest.TestCase):
 
     def test_save_validates_plan_and_clears_previous_override(self):
         engine=Mock(); cls=server.make_handler(engine); handler=cls.__new__(cls)
-        handler.path='/api/settings';handler.headers={};handler._send=Mock()
+        handler.path='/api/settings';handler.headers={'Host':'127.0.0.1:8765'};handler._send=Mock()
+        handler.server=Mock(server_address=('127.0.0.1',8765))
         handler._body=Mock(return_value={'subscription_plans':{'claude':'auto','codex':'pro_500','gemini':'invalid'}})
         cfg=self.cfg({})
         with patch.object(server.paths,'load_config',return_value=cfg),patch.object(server.paths,'save_config'):

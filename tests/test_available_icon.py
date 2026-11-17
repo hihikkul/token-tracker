@@ -6,7 +6,7 @@ from tracker import widget
 class AvailableIcon(unittest.TestCase):
     def draw(self, limits):
         bar = widget.Widget.__new__(widget.Widget)
-        bar.show = list(widget.NAMES)
+        bar.show = list(widget.sources.names())
         bar.live_icon = True
         bar._icon_key = object()
         bar.root = Mock()

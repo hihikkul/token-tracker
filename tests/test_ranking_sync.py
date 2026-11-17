@@ -88,16 +88,13 @@ class ConcurrentSync(unittest.TestCase):
                 self.assertFalse(second.result(timeout=5))
         self.assertEqual(remote.call_count, 3)
 
-    def test_rankings_keep_120_second_forced_freshness(self):
-        for age, force in ((120, False), (121, True)):
-            for get in (ranking.ranking, ranking.global_ranking):
-                with self.subTest(age=age, endpoint=get.__name__), \
-                        patch.object(ranking.time, 'time', return_value=1000), \
-                        patch.dict(ranking._last_sync, t=1000 - age), \
-                        patch.object(ranking, 'sync', side_effect=ranking.RankingError('offline')) as sync, \
-                        patch.object(ranking, '_call', return_value={'members': []}):
-                    get(None, {}, 'week')
-                    sync.assert_called_once_with(None, {}, force=force)
+    def test_rankings_pass_read_refresh_window_without_forcing(self):
+        for get in (ranking.ranking, ranking.global_ranking):
+            with self.subTest(endpoint=get.__name__), \
+                    patch.object(ranking, 'sync', side_effect=ranking.RankingError('offline')) as sync, \
+                    patch.object(ranking, '_call', return_value={'members': []}):
+                get(None, {}, 'week')
+                sync.assert_called_once_with(None, {}, refresh_after=120)
 
 
 if __name__ == '__main__':
