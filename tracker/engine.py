@@ -3,7 +3,7 @@ import threading
 import time
 import traceback
 
-from . import paths, sources, stats
+from . import paths, pricing, sources, stats
 from .collectors import scan_all
 from .db import DB
 from .limits import all_limits
@@ -68,11 +68,23 @@ class Engine:
         self._wake.set()
 
     def _loop(self):
+        price_thread = None
+        price_checked_at = None
         while not self._stop.is_set():
             try:
                 self.refresh()
             except Exception:
                 pass  # never let one bad round stop scanning for good
+            try:
+                now = time.time()
+                if ((price_checked_at is None or now - price_checked_at >= 3600)
+                        and (price_thread is None or not price_thread.is_alive())):
+                    price_thread = threading.Thread(target=pricing.refresh, args=(self.db,),
+                                                    daemon=True, name="tracker-prices")
+                    price_thread.start()
+                    price_checked_at = now
+            except Exception:
+                pass
             try:
                 from . import ranking
                 ranking.sync(self.db, self.snapshot.get("limits"))

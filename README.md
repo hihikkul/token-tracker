@@ -109,7 +109,7 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 - 웹 항목은 선택할 수 있지만 Codex/Gemini CLI 기록을 웹 사용량으로 대신 표시하지 않아요. Antigravity가 토큰 기록을 제공하지 않는 버전이면 한도만 표시돼요. Gemini CLI는 먼저 CLI에서 로그인하고, Antigravity는 앱을 실행해주세요.
 - Claude Code는 기본 30일이 지나면 로그를 지우지만, 트래커가 한 번 읽은 기록은 `usage.db`에 계속 남아요. 켜 둘수록 기록이 길어집니다.
 - 비용은 **API 정가로 환산한 추정치**예요. 구독 실제 청구액이 아닙니다 (일부 모델은 공식이 아닌 가격표 기준이라 확인을 권해요).
-- 단가를 바꾸려면 기록 폴더(`%LOCALAPPDATA%\TokenTracker`, Mac은 `~/Library/Application Support/TokenTracker`)에 `prices.json`을 만들어 같은 형식으로 고칠 모델만 넣으세요. 기본 가격보다 우선하고, 업데이트해도 그대로 남아요. 설치 폴더의 `prices.json`은 업데이트 때 새 가격으로 바뀌어요. 형식이 잘못된 줄은 건너뛰어요.
+- 기본 가격표는 하루에 한 번 GitHub에서 갱신해요. 가격표에 없는 모델의 단가는 LiteLLM에서 찾고, 거기에도 없으면 OpenRouter에서 찾아 자동으로 적용해요. 직접 정한 단가를 쓰려면 기록 폴더(`%LOCALAPPDATA%\TokenTracker`, Mac은 `~/Library/Application Support/TokenTracker`)의 `prices.json`에 같은 형식으로 추가하세요. 같은 모델 패턴에 직접 정한 단가가 있으면 자동으로 받은 값보다 우선하고, 앱을 업데이트해도 그대로 남아요.
 - DeepSeek는 피크 시간(평일 UTC 01–04시, 06–10시, 한국 시간 10–13시, 15–19시)에 두 배 가격이라 기록 시각에 맞는 단가로 계산해요. 중국 공휴일 할인은 반영하지 않아요.
 
 ## 설정
