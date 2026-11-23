@@ -179,6 +179,10 @@ CLAUDE_LABELS = {
 }
 
 
+def _claude_window(key):
+    return key in ('five_hour', 'seven_day') or (key or '').startswith('seven_day_')
+
+
 def _window_label(minutes):
     if not minutes:
         return "Limit"
@@ -210,6 +214,8 @@ def _get_usage(token):
 def fetch_claude(db, force=False):
     cfg = paths.load_config()
     cached = db.get_kv("claude_limits") or {}
+    if cached.get('windows'):  # cached responses from before extra_usage was separated
+        cached['windows'] = [w for w in cached['windows'] if _claude_window(w.get('key'))]
     now = time.time()
     min_gap = cfg.get("limits_interval_sec", 300)
     if cached.get("backoff_until", 0) > now and not force:
@@ -281,7 +287,7 @@ def fetch_claude(db, force=False):
                 data = _get_usage(new["accessToken"])
             windows = []
             for key, v in data.items():
-                if not isinstance(v, dict) or v.get("utilization") is None:
+                if not _claude_window(key) or not isinstance(v, dict) or v.get("utilization") is None:
                     continue
                 label, order = CLAUDE_LABELS.get(key, (key.replace("_", " "), 9))
                 windows.append({"key": key, "label": label, "order": order,

@@ -126,7 +126,23 @@ def build(db, limits=None):
                     "observed_at": datetime.fromtimestamp(a["fetched_at"]).strftime("%Y-%m-%d %H:%M") if a.get("fetched_at") else "",
                 })
 
-    # finer grain for the local dashboard's model / project filters
+    details = dashboard_rows(db, now)
+    for srow in sessions:
+        srow['projects'] = srow['project']
+    unpriced = []
+    for r in q("SELECT model, source, SUM(input+output+cache_write+cache_read) tokens FROM records "
+               "WHERE ts>=? AND ts<=? GROUP BY model, source HAVING tokens>0 ORDER BY tokens DESC",
+               (now - 90 * 86400, now)):
+        if price_for(r['model']) is None:
+            unpriced.append({'model': r['model'], 'tool': _source_name(r['source']), 'tokens': r['tokens']})
+    return {'daily': daily, 'projects': projects, 'hours': hours, 'sessions': sessions, 'limits': limit_rows,
+            **details, 'limits_raw': _limits_raw(lim), 'unpriced': unpriced}
+
+
+def dashboard_rows(db, now):
+    """Only the two row sets and prices used by the live dashboard filters."""
+    q = db.query
+    lday = "date(ts,'unixepoch','localtime')"
     detail = []
     for r in q(f"SELECT {lday} AS date, source, model, COALESCE(project,'(알 수 없음)') project, "
                f"{PEAK_SQL} AS peak, SUM(input) input, SUM(output) output, "
@@ -146,17 +162,7 @@ def build(db, limits=None):
         h["tool"] = _source_name(h.pop("source"))
     # per-model list prices, so the dashboard can work out what cache reads saved
     prices = {m: p for m in {r["model"] for r in detail} if (p := price_for(m))}
-    for srow in sessions:
-        srow["projects"] = srow["project"]
-    unpriced = []
-    for r in q("SELECT model, source, SUM(input+output+cache_write+cache_read) tokens FROM records "
-               "WHERE ts>=? AND ts<=? GROUP BY model, source HAVING tokens>0 ORDER BY tokens DESC",
-               (now - 90 * 86400, now)):
-        if price_for(r["model"]) is None:
-            unpriced.append({"model": r["model"], "tool": _source_name(r["source"]), "tokens": r["tokens"]})
-    return {"daily": daily, "projects": projects, "hours": hours, "sessions": sessions, "limits": limit_rows,
-            "daily_detail": detail, "hours_detail": hours_detail, "prices": prices, "limits_raw": _limits_raw(lim),
-            "unpriced": unpriced}
+    return {"daily_detail": detail, "hours_detail": hours_detail, "prices": prices}
 
 
 def _limits_raw(lim):

@@ -10,7 +10,7 @@ Free and unknown selected plans never fall back to a detected paid plan.
 
 The ranking server (server/worker.js) receives nickname, plan names and, per period,
 the window, three dollar amounts (API-equivalent spend counted in the ratio, the
-subscription share, API-equivalent spend of every tool) and the token total. Nothing else
+subscription share, API-equivalent usage). Only the public ranking receives token totals. Nothing else
 leaves the PC. Both groups and the opt-in public ranking rank by ratio.
 """
 import json
@@ -174,6 +174,8 @@ def codex_subscriptions(limits, cfg=None):
         if len(accounts) > 1:
             local['subscription_usd_month']['codex'] = 0
         sub = subscriptions({'codex': {'plan': account.get('plan')}}, local)['codex']
+        if overrides.get(key) == 'excluded':
+            sub = {'usd': None, 'plan': account.get('plan'), 'from': 'excluded'}
         rows.append(dict(sub, key=key, label=f'Codex · {key[:4]}', detected_plan=account.get('plan')))
     return rows
 
@@ -219,9 +221,10 @@ def report(db, limits, cfg=None):
     subs = subscriptions(limits, cfg)
     codex = codex_subscriptions(limits, cfg) if 'codex' in enabled(cfg) else []
     if codex:
-        subs['codex'] = {'accounts':codex, 'usd':sum(row['usd'] or 0 for row in codex),
-                         'plan':' + '.join(row['plan'] or 'Unknown' for row in codex),
-                         'from':'accounts', 'partial':any(row['usd'] is None for row in codex)}
+        current = [row for row in codex if row['from'] != 'excluded']
+        subs['codex'] = {'accounts':codex, 'usd':sum(row['usd'] or 0 for row in current),
+                         'plan':' + '.join(row['plan'] or 'Unknown' for row in current),
+                         'from':'accounts', 'partial':any(row['usd'] is None for row in current)}
     res = {"subscriptions": subs, "periods": {}}
     for period, (win, start, days) in windows().items():
         start_ts = datetime.combine(start, datetime.min.time()).timestamp()
@@ -269,6 +272,10 @@ class RankingError(Exception):
     pass
 
 
+class MembershipExpired(RankingError):
+    pass
+
+
 def server_url(cfg=None):
     cfg = cfg if cfg is not None else paths.load_config()
     settings = cfg.get('ranking') or {}
@@ -305,11 +312,17 @@ def _call(method, path, body=None, token=None, cfg=None):
         except urllib.error.HTTPError as e:
             if e.code >= 500 and method != "POST":
                 failure = RankingError(f"Server error {e.code}")
+                e.close()
                 continue
             try:
                 msg = json.loads(e.read().decode("utf-8")).get("error")
             except (ValueError, OSError):
                 msg = None
+            finally:
+                e.close()
+            if token and path.startswith('/v1/global/') and (e.code in (401, 403) or
+                    (e.code == 404 and msg in ('member not found', 'membership not found', 'bad token'))):
+                raise MembershipExpired('전체 랭킹 참가 정보가 만료됐습니다. 다시 참가해 주세요.')
             raise RankingError({"group not found": "Invite code not found", "group is full": "Group is full (50 members maximum)",
                                 "bad token": "Membership expired. Join the group again.",
                                 "not found": "The ranking server needs an update"}.get(msg, msg or f"Server error {e.code}"))
@@ -360,8 +373,18 @@ def _save_group(res, nick):
         else:
             groups.append(entry)
         cfg['ranking_groups'] = groups
-        paths.save_config(cfg)
+        saved = paths.save_config(cfg)
+    if not saved:
+        _undo_enrollment(f"/v1/groups/{entry['code']}/me", entry['token'], cfg)
     _last_sync['t'] = 0.0
+
+
+def _undo_enrollment(path, token, cfg):
+    try:
+        _call('DELETE', path, token=token, cfg=cfg)
+    except RankingError:
+        pass  # best effort; still report the local write failure
+    raise RankingError('참가 정보를 저장하지 못했습니다. 디스크 공간과 쓰기 권한을 확인하세요.')
 
 
 def _update_group(code, **fields):
@@ -371,7 +394,8 @@ def _update_group(code, **fields):
         group = _group(cfg, code)
         if group:
             group.update(fields)
-            paths.save_config(cfg)
+            if not paths.save_config(cfg):
+                raise RankingError('참가 정보를 저장하지 못했습니다. 설정 파일의 쓰기 권한을 확인하세요.')
         return group
 
 
@@ -456,17 +480,17 @@ def _period_tokens(db, cfg=None):
     return out
 
 
-def _score_body(db, limits, cfg, nick):
+def _score_body(db, limits, cfg, nick, include_tokens=True):
     rep = report(db, limits, cfg)
     plans = ' · '.join(f"{sources.display_name(t.get('source', s))} {t['plan'].split('·', 1)[0].strip()}"
                        if t.get('plan') else sources.display_name(t.get('source', s))
                        for s, t in rep['periods']['month']['tools'].items() if t['sub'])
-    tokens = _period_tokens(db, cfg)
+    tokens = _period_tokens(db, cfg) if include_tokens else {}
     # usage = API-equivalent spend of every tool, even ones without a known subscription price
     return {"nick": nick or "", "plans": plans, 'calculation_version': 2,
             "periods": {p: {"window": v["window"], "api": round(v["api"], 4), "sub": round(v["sub"], 4),
                             "usage": round(sum(t["api"] for t in v["tools"].values()), 4),
-                            "tokens": tokens.get(p, 0)}
+                            **({'tokens': tokens.get(p, 0)} if include_tokens else {})}
                         for p, v in rep["periods"].items()}}
 
 
@@ -490,16 +514,23 @@ def sync(db, limits, force=False, refresh_after=None):
         window = SYNC_EVERY if refresh_after is None else refresh_after
         if not force and time.time() - _last_sync['t'] < window:
             return False
-        body = _score_body(db, limits, cfg, '')
+        body = _score_body(db, limits, cfg, '', include_tokens=bool(global_member.get('token')))
+        group_body = dict(body, periods={p: {k: v for k, v in values.items() if k != 'tokens'}
+                                         for p, values in body['periods'].items()})
         errors = []
         with ThreadPoolExecutor(max_workers=min(32, len(targets))) as pool:
-            futures = [pool.submit(_call, 'PUT', path, dict(body, nick=member.get('nick') or ''),
+            futures = [pool.submit(_call, 'PUT', path, dict(body if path == '/v1/global/score' else group_body,
+                                                            nick=member.get('nick') or ''),
                                    token=member['token'], cfg=cfg)
                        for path, member in targets]
             # Consume in target order, not completion order, to preserve the first error.
-            for future in futures:
+            for future, (path, member) in zip(futures, targets):
                 try:
                     future.result()
+                except MembershipExpired as error:
+                    if path == '/v1/global/score':
+                        _expire_global(member['token'])
+                    errors.append(error)
                 except RankingError as error:
                     errors.append(error)  # one expired membership must not block other groups/global
         _last_sync['t'] = time.time()
@@ -514,7 +545,18 @@ def global_state(cfg=None):
     g = cfg.get("ranking_global") or {}
     groups = cfg.get('ranking_groups') or []
     fallback = groups[0].get('nick') if groups else (cfg.get('ranking') or {}).get('nick')
-    return {'joined': bool(g.get('token')), 'nick': g.get('nick') or fallback or ''}
+    return {'joined': bool(g.get('token')), 'nick': g.get('nick') or fallback or '',
+            'expired': bool(g.get('expired'))}
+
+
+def _expire_global(token):
+    with paths.config_lock():
+        cfg = paths.load_config()
+        member = cfg.get('ranking_global') or {}
+        if member.get('token') == token:  # a concurrent re-join may have issued a new token
+            cfg['ranking_global'] = {'nick': member.get('nick'), 'expired': True}
+            if not paths.save_config(cfg):
+                raise RankingError('만료된 참가 정보를 지우지 못했습니다. 설정 파일의 쓰기 권한을 확인하세요.')
 
 
 def global_join(nick):
@@ -522,8 +564,9 @@ def global_join(nick):
         global_set_nick(nick)
         return {'ok': True}
     res = _call("POST", "/v1/global/join", {"nick": nick})
-    paths.update_config(lambda cfg: cfg.update(
-        ranking_global={"member_id": res["member_id"], "token": res["token"], "nick": nick}))
+    if not paths.update_config(lambda cfg: cfg.update(
+            ranking_global={"member_id": res["member_id"], "token": res["token"], "nick": nick})):
+        _undo_enrollment('/v1/global/me', res['token'], paths.load_config())
     _last_sync["t"] = 0.0
     return res
 
@@ -536,6 +579,8 @@ def global_leave():
         # the UI would promise erased records while leaving an unreachable orphan.
         try:
             _call('DELETE', '/v1/global/me', token=g['token'], cfg=cfg)
+        except MembershipExpired:
+            pass
         except RankingError as error:
             if str(error) not in ('bad token', 'Membership expired. Join the group again.'):
                 raise
@@ -558,7 +603,11 @@ def global_ranking(db, limits, period):
         pass
     period = period if period in PERIODS else "week"
     win = windows()[period][0]
-    res = _call("GET", f"/v1/global/ranking?period={period}&window={win}", token=g["token"], cfg=cfg)
+    try:
+        res = _call("GET", f"/v1/global/ranking?period={period}&window={win}", token=g["token"], cfg=cfg)
+    except MembershipExpired:
+        _expire_global(g['token'])
+        raise
     res["nick"] = g.get("nick")
     return res
 

@@ -215,10 +215,20 @@ def proxy_chatgpt_account():
         return None
 
 
-def _assign_proxy_accounts(db):
-    """Retire the old migration: today's login says nothing about historical turns."""
-    if db.get_kv("claude_proxy_accounts") != 1:
-        db.set_kv("claude_proxy_accounts", 1)
+def _router_lookup(timeline=None):
+    if timeline is None:
+        timeline = ripple.account_timeline()
+    times = [t for t, _ in timeline]
+
+    def lookup(ts):
+        i = bisect(times, ts)
+        nearby = timeline[max(0, i - 1):i + 1]
+        if nearby:
+            at, account = min(nearby, key=lambda event: abs(event[0] - ts))
+            if abs(at - ts) <= ROUTER_MATCH_SEC:
+                return account
+        return None
+    return lookup
 
 
 def _split_claude_vendors(db):
@@ -317,10 +327,12 @@ def _repair_proxy_usage(db, deepseek):
 def scan_claude(db, report):
     n_files = n_rows = skipped = 0
     _split_claude_vendors(db)
-    _assign_proxy_accounts(db)
     deepseek = _deepseek_configured()
     _repair_proxy_usage(db, deepseek)
-    proxy_acct = None
+    proxy_acct = router = None
+    now = time.time()
+    # Accounts already stored are left alone: many came from router log lines that have since
+    # rotated away, so they cannot be re-checked now. Only newly read rows use the rule below.
     for root in paths.claude_project_dirs():
         for path in root.rglob("*.jsonl"):
             n_files += 1
@@ -352,10 +364,16 @@ def scan_claude(db, report):
                         src, model = _claude_turn_model(model, o, u, deepseek)
                         if _is_usage_placeholder(src, u):
                             continue
-                        if src == "codex" and proxy_acct is None:
-                            proxy_acct = proxy_chatgpt_account() or ""
+                        account = None
+                        if src == 'codex':
+                            router = router or _router_lookup()
+                            account = router(ts)
+                            if not account and 0 <= now - ts <= 900:
+                                if proxy_acct is None:
+                                    proxy_acct = proxy_chatgpt_account() or ''
+                                account = proxy_acct or None
                         rows.append({"uid": uid, "source": src, "ts": ts, "model": model,
-                                     "account": (proxy_acct or None) if src == "codex" else None,
+                                     "account": account,
                                      "project": _project_name(o.get("cwd")) or _claude_dir_project(path),
                                      "session": _text(o.get("sessionId")) or path.stem, **counts})
                     except (ValueError, TypeError, AttributeError, OverflowError):
@@ -366,7 +384,7 @@ def scan_claude(db, report):
             except (OSError, ValueError, TypeError):
                 skipped += 1
     report["claude"] = {"files": n_files, "new_records": n_rows, "skipped": skipped,
-                        "dirs": [str(p) for p in paths.claude_project_dirs()]}
+                        "dirs": [str(p) for p in paths.claude_project_dirs(existing_only=False)]}
 
 
 # ======================================================================== Codex
@@ -475,14 +493,10 @@ def _assign_accounts_from_router(db):
         return
     timeline = ripple.account_timeline()
     if timeline:
-        times = [t for t, _ in timeline]
-        updates = []
-        for r in db.query("SELECT uid, ts FROM records WHERE source = 'codex' AND ts >= ?",
-                          (times[0] - ROUTER_MATCH_SEC,)):
-            i = bisect(times, r["ts"])
-            at, acct = min(timeline[max(i - 1, 0):i + 1], key=lambda e: abs(e[0] - r["ts"]))
-            if abs(at - r["ts"]) <= ROUTER_MATCH_SEC:
-                updates.append((acct, r["uid"]))
+        lookup = _router_lookup(timeline)
+        updates = [(acct, r['uid']) for r in db.query(
+            "SELECT uid, ts FROM records WHERE source = 'codex' AND ts >= ?",
+            (timeline[0][0] - ROUTER_MATCH_SEC,)) if (acct := lookup(r['ts']))]
         from .db import _lock
         with _lock:
             db.conn.executemany("UPDATE records SET account = ? WHERE uid = ?", updates)
@@ -551,6 +565,7 @@ def scan_codex(db, report):
     n_files = n_rows = skipped = 0
     _split_claude_vendors(db)
     backfill = db.get_kv('codex_record_accounts_version') != 2
+    repair_deltas = db.get_kv('codex_deltas_v2') != 1
     if db.get_kv("codex_limits_version") != LIMITS_VERSION:
         _rebuild_codex_limits(db)
     accounts = db.get_kv("codex_limits_by_account") or {}
@@ -561,7 +576,7 @@ def scan_codex(db, report):
         for path in d.rglob("*.jsonl"):
             n_files += 1
             try:
-                res = read_new_lines(db, path, force=backfill)
+                res = read_new_lines(db, path, force=backfill or repair_deltas)
                 if res is None:
                     continue
                 state = dict(res["state"])
@@ -632,6 +647,7 @@ def scan_codex(db, report):
                         known = events.get(cur['total_tokens'])
                         # Fork rollouts can share sid while restarting an independent counter.
                         delta = {k: cur[k] - prev.get(k, 0) for k in cur}
+                        base = prev.get('total_tokens', 0)
                         prev = cur
                         if delta["total_tokens"] <= 0 and not known:
                             continue
@@ -641,9 +657,14 @@ def scan_codex(db, report):
                                   "output": max(0, delta["output_tokens"]), "cache_read": cached,
                                   "cache_write": cwrite, "reasoning": max(0, delta["reasoning_output_tokens"])}
                         if known:
-                            counts = {key: known['row'][key] for key in counts}
+                            old = known['row']
+                            old_base = old['codex_base']
+                            if old_base is None:  # a delta saved before baselines were recorded
+                                old_base = cur['total_tokens'] - sum(old[k] for k in ('input', 'cache_read', 'cache_write', 'output'))
+                            if delta['total_tokens'] <= 0 or base <= old_base:
+                                base, counts = old_base, {key: old[key] for key in counts}
                         uid = f"x:{sid}:{cur['total_tokens']}" + (f":g{generation}" if generation else "")
-                        row = {"uid": uid, "source": src, "ts": ts, "model": model or "codex",
+                        row = {"uid": uid, "source": src, "ts": ts, "model": model or "codex", 'codex_base': base,
                                "project": _project_name(cwd), "session": sid,
                                'account': (served or (None if conflict else acct)) if src == 'codex' else None, **counts}
                         rows.append(row)
@@ -660,10 +681,13 @@ def scan_codex(db, report):
     if accounts:
         db.set_kv("codex_limits_by_account", accounts)
         db.set_kv("codex_plan_by_account", plans)
+    if repair_deltas:
+        db.set_kv('codex_deltas_v2', 1)
+        db.set_kv('codex_router_accounts', 0)  # restore router evidence after replay
     db.set_kv('codex_record_accounts_version', 2)
     _assign_accounts_from_router(db)
     report["codex"] = {"files": n_files, "new_records": n_rows, "accounts": len(accounts), "skipped": skipped,
-                       "dirs": [str(p) for p in paths.codex_session_dirs()]}
+                       "dirs": [str(p) for p in paths.codex_session_dirs(existing_only=False)]}
 
 
 # ======================================================================= Gemini
@@ -706,8 +730,6 @@ def _walk(o, parent_ts=None, parent_model=None, depth=0):
 
 def _gemini_files():
     root = paths.gemini_root()
-    if not root.exists():
-        return []
     files = []
     tmp = root / "tmp"
     if tmp.exists():
@@ -737,16 +759,45 @@ def _gemini_message_key(d, ts, model, occurrences):
     return f"anon:{digest}:{occurrence}"
 
 
+def _gemini_uid(session, mid):
+    return 'gm:' + json.dumps([session, mid], ensure_ascii=False, separators=(',', ':'))
+
+
+def _migrate_gemini_uids(db):
+    if db.get_kv('gemini_message_uids') == 1:
+        return False
+    # Old UIDs contain the complete relative (or absolute) path, then the message id.
+    # A session equal to the filename may be the old parser's fallback, not an ID.
+    # Leave those rows path-keyed until a transcript supplies an explicit sessionId.
+    rows, old = [], []
+    for row in db.query("SELECT * FROM records WHERE uid GLOB 'g:*' ORDER BY ts"):
+        match = re.fullmatch(r'g:(.+?\.jsonl?):(.*)', row['uid'], re.S)
+        if not match or not row['session'] or match[2].startswith('anon:'):
+            continue
+        if Path(match[1].replace('\\', '/')).stem == row['session']:
+            continue
+        old.append((row['uid'],))
+        row['uid'] = _gemini_uid(row['session'], match[2])
+        rows.append(row)
+    db.upsert_records(rows)
+    from .db import _lock
+    with _lock, db.conn:
+        db.conn.executemany('DELETE FROM records WHERE uid=?', old)
+    return True
+
+
 def scan_gemini(db, report):
     n_files = n_rows = skipped = skipped_large = 0
     root = paths.gemini_root()
+    migrate = _migrate_gemini_uids(db)
+    legacy = {}
     for path in _gemini_files():
         n_files += 1
         try:
             st = path.stat()
             res = None
             if path.suffix == '.jsonl':
-                res = read_new_lines(db, path)
+                res = read_new_lines(db, path, force=migrate)
                 if res is None:
                     continue
                 objs = (obj for _, obj in res['lines'])
@@ -756,13 +807,14 @@ def scan_gemini(db, report):
                     skipped_large += 1
                     continue
                 rec = db.get_file(path)
-                if rec and rec['mtime'] == st.st_mtime and rec['size'] == st.st_size:
+                if not migrate and rec and rec['mtime'] == st.st_mtime and rec['size'] == st.st_size:
                     continue
                 objs = [json.loads(path.read_text(encoding='utf-8', errors='replace'))]
                 state = {}
             rel = str(path.relative_to(root)) if root in path.parents else str(path)
             kind = "antigravity" if "antigravity" in rel.lower() else "gemini-cli"
-            session = state.get('session') or path.stem
+            session = state.get('session_id')
+            retired = []
             occurrences = state.get('occurrences') or {}
             rows = []
             for obj in objs:
@@ -777,11 +829,24 @@ def scan_gemini(db, report):
                         if not u or (model is not None and not isinstance(model, str)):
                             raise ValueError('invalid usage')
                         mid = _gemini_message_key(d, ts, model, occurrences)
+                        uid = f'g:{rel}:{mid}'
+                        if session and d.get('id') is not None:
+                            uid = _gemini_uid(session, mid)
+                            if session not in legacy:
+                                legacy[session] = {}
+                                for old in db.query("SELECT * FROM records WHERE session=? AND uid GLOB 'g:*'", (session,)):
+                                    match = re.fullmatch(r'g:(.+?\.jsonl?):(.*)', old['uid'], re.S)
+                                    if match:
+                                        legacy[session].setdefault(match[2], []).append((match[1], old))
+                            for old_path, old in legacy[session].get(mid, ()):
+                                if old_path == rel or not (root / old_path).exists():
+                                    rows.append(dict(old, uid=uid))
+                                    retired.append((old['uid'],))
                         rows.append({
-                            "uid": f"g:{rel}:{mid}", "source": 'antigravity' if kind == 'antigravity' else 'gemini',
+                            "uid": uid, "source": 'antigravity' if kind == 'antigravity' else 'gemini',
                             "ts": ts or int(st.st_mtime), "model": model or "gemini",
                             "project": kind if kind == "antigravity" else (path.parent.parent.name[:8] if path.parent.name == "chats" else kind),
-                            "session": session, "cache_write": 0, **u,
+                            "session": session or path.stem, "cache_write": 0, **u,
                         })
                         if len(rows) >= 512:
                             n_rows += db.upsert_records(rows)
@@ -789,15 +854,21 @@ def scan_gemini(db, report):
                     except (ValueError, TypeError, AttributeError, OverflowError):
                         skipped += 1
             n_rows += db.upsert_records(rows)
+            if retired:
+                from .db import _lock
+                with _lock, db.conn:
+                    db.conn.executemany('DELETE FROM records WHERE uid=?', retired)
             if res:
                 skipped += res['skipped']
-                res['commit']({'session': session, 'occurrences': occurrences})
+                res['commit']({'session_id': session, 'occurrences': occurrences})
             else:
                 db.set_file(path, st.st_mtime, st.st_size, st.st_size, {})
         except (OSError, ValueError, TypeError, AttributeError, OverflowError):
             skipped += 1
+    if migrate:
+        db.set_kv('gemini_message_uids', 1)
     report["gemini"] = {"files": n_files, "new_records": n_rows, "skipped": skipped,
-                        "skipped_large": skipped_large, "dirs": [str(root)]}
+                        "skipped_large": skipped_large, "dirs": [str(root), *paths.load_config().get('extra_paths', {}).get('gemini', [])]}
 
 
 def scan_all(db):

@@ -183,6 +183,18 @@ class CollectorFixes(unittest.TestCase):
         self.assertEqual(self.db.query('SELECT input FROM records ORDER BY uid'), [{'input': 100}] * 3)
         self.assertEqual(self.db.get_file(copy)['state']['prev']['total_tokens'], 300)
 
+    def test_partial_codex_copy_read_first_takes_more_precise_delta(self):
+        self.write_lines(self.sessions / 'partial.jsonl', [self.codex_meta(), self.codex_turn(200)])
+        collectors.scan_codex(self.db, {})
+        self.write_lines(self.archive / 'original.jsonl', [self.codex_meta(), self.codex_turn(100),
+                         self.codex_turn(200), self.codex_turn(200)])
+        collectors.scan_codex(self.db, {})
+        self.assertEqual(self.total(), 200)
+        self.assertEqual(self.db.query('SELECT input FROM records ORDER BY uid'), [{'input': 100}] * 2)
+        self.db.set_kv('codex_record_accounts_version', 1)
+        collectors.scan_codex(self.db, {})
+        self.assertEqual(self.total(), 200)
+
     def test_partial_codex_copy_preserves_counts_produced_earlier_in_same_scan(self):
         self.write_lines(self.sessions / 'original.jsonl', [self.codex_meta(),
             self.codex_turn(100), self.codex_turn(200)])
@@ -209,6 +221,47 @@ class CollectorFixes(unittest.TestCase):
         collectors.scan_codex(self.db, {})
         self.assertEqual(self.db.query('SELECT uid,input FROM records ORDER BY uid'), rows)
 
+    def test_moved_and_copied_gemini_messages_merge_with_legacy_rows(self):
+        for suffix in ('.json', '.jsonl'):
+            with self.subTest(suffix=suffix):
+                session = 'session' + suffix
+                message = self.gemini_turn(10, id='msg:1')
+                path = self.gemini / ('original' + suffix)
+                self.write_lines(path, [{'sessionId': session, 'messages': [message]}])
+                db = DB(':memory:')
+                self.addCleanup(db.conn.close)
+                for name in (path.name, 'lost' + suffix):
+                    db.upsert_records([dict(uid=f'g:{name}:msg:1', session=session, ts=100,
+                                            source='gemini', input=10)])
+                renamed = path.rename(self.gemini / ('moved' + suffix))
+                with patch.object(collectors, '_gemini_files', return_value=[renamed]):
+                    collectors.scan_gemini(db, {})
+                path.write_bytes(renamed.read_bytes())
+                with patch.object(collectors, '_gemini_files', return_value=[path, renamed]):
+                    collectors.scan_gemini(db, {})
+                self.assertEqual(db.query('SELECT session,input FROM records'), [{'session':session,'input':10}])
+
+    def test_same_named_gemini_files_without_session_id_remain_separate(self):
+        dirs = [self.gemini / name for name in ('a', 'b')]
+        files = []
+        for directory in dirs:
+            directory.mkdir()
+            path = directory / 'same.json'
+            self.write_lines(path, [self.gemini_turn(20, id='same-message')])
+            files.append(path)
+        with patch.object(collectors, '_gemini_files', return_value=files):
+            collectors.scan_gemini(self.db, {})
+        self.assertEqual(self.total(), 40)
+
+    def test_newly_discovered_historical_proxy_turn_prefers_router_evidence(self):
+        collectors.scan_codex(self.db, {})  # the router backfill has already run
+        turn = self.claude_turn('routed', 'gpt-5', ts=10000)
+        turn['message']['usage']['output_tokens'] = 2
+        self.write_lines(self.projects / 'old.jsonl', [turn])
+        with patch('tracker.ripple.account_timeline', return_value=[(9999, 'then')]):
+            collectors.scan_claude(self.db, {})
+        self.assertEqual(self.db.query('SELECT account FROM records'), [{'account':'then'}])
+
     def test_gemini_insertion_does_not_shift_anonymous_uids(self):
         path = self.gemini / 'messages.json'
         first = [self.gemini_turn(10, 10), self.gemini_turn(20, 20)]
@@ -230,7 +283,7 @@ class CollectorFixes(unittest.TestCase):
         self.assertEqual(self.total(), 20)
         self.assertEqual(len(self.db.query('SELECT uid FROM records')), 2)
 
-    def test_proxy_turns_use_scan_time_account_at_any_age_but_vendors_never_do(self):
+    def test_proxy_turns_use_current_account_only_for_recent_usage(self):
         now = int(time.time())
         self.db.upsert_records([{'uid': 'c:old:r', 'source': 'codex', 'model': 'gpt-5', 'ts': 1, 'output': 1}])
         turns = [self.claude_turn('past', 'gpt-5', ts=now - 901),
@@ -242,8 +295,8 @@ class CollectorFixes(unittest.TestCase):
         self.write_lines(self.projects / 's.jsonl', turns)
         collectors.scan_claude(self.db, {})
         accounts = {r['uid']: r['account'] for r in self.db.query('SELECT uid, account FROM records')}
-        self.assertEqual(accounts, {'c:old:r': None, 'c:past:req_past': 'today',
-            'c:recent:req_recent': 'today', 'c:future:req_future': 'today', 'c:vendor:req_vendor': None})
+        self.assertEqual(accounts, {'c:old:r': None, 'c:past:req_past': None,
+            'c:recent:req_recent': 'today', 'c:future:req_future': None, 'c:vendor:req_vendor': None})
 
     def test_active_ripple_account_is_used_instead_of_list_order(self):
         with patch('tracker.ripple.active_account', return_value='active'):

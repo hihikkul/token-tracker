@@ -120,6 +120,15 @@ class PricingStatsFixes(unittest.TestCase):
                 self.assertEqual(pricing.cost(model, input=1000000), input_price)
                 self.assertEqual(pricing.cost(model, cache_read=1000000), cache_read)
 
+    def test_official_claude_3_ids_resolve_to_their_own_rates(self):
+        rows = pricing._table()[0]
+        expected = {'claude-3-5-haiku': (0.8, 4), 'claude-3-5-sonnet': (3, 15),
+                    'claude-3-opus': (15, 75), 'claude-3-haiku': (0.25, 1.25)}
+        for official, (input_price, output_price) in expected.items():
+            with self.subTest(official=official):
+                self.assertEqual((rows[official]['input'], rows[official]['output']), (input_price, output_price))
+                self.assertIs(pricing.price_for(official + '-20241022'), rows[official])
+
     def test_terra_and_legacy_opus_prices_and_review_remains_unpriced(self):
         self.assertEqual(pricing.price_for('gpt-6.1-terra'),
                          {'input': 1, 'output': 5, 'cache_read': .05, 'cache_write': 1.25})

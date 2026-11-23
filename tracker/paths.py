@@ -44,11 +44,11 @@ def claude_roots():
     return roots
 
 
-def claude_project_dirs():
+def claude_project_dirs(existing_only=True):
     out = []
     for r in claude_roots():
         p = r / "projects" if (r / "projects").exists() else r
-        if p.exists() and p not in out:
+        if (not existing_only or p.exists()) and p not in out:
             out.append(p)
     return out
 
@@ -85,11 +85,11 @@ def codex_root() -> Path:
     return Path(v) if v else HOME / ".codex"
 
 
-def codex_session_dirs():
+def codex_session_dirs(existing_only=True):
     root = codex_root()
     dirs = [root / "sessions", root / "archived_sessions"]
     dirs += [Path(p) for p in load_config().get("extra_paths", {}).get("codex", [])]
-    return [d for d in dirs if d.exists()]
+    return [d for d in dirs if d.exists()] if existing_only else dirs
 
 
 def gemini_root() -> Path:
@@ -257,6 +257,5 @@ def update_config(change):
     Use this instead of saving a copy loaded earlier, which would undo newer edits."""
     with _config_lock:
         cfg = load_config()
-        result = change(cfg)
-        save_config(cfg)
-        return result
+        change(cfg)
+        return save_config(cfg)

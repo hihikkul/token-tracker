@@ -73,7 +73,7 @@ def display_name(key):
 
 def is_subscription(key):
     """Built-in apps run on a subscription plan; detected providers are paid per token (or free
-    when run locally), so their API-equivalent cost is real spend, not a subscription's value."""
+    when run locally). Their API-equivalent cost is an estimate, not a bill."""
     return key in BUILTIN
 
 

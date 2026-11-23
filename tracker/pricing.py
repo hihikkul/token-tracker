@@ -30,6 +30,7 @@ PEAK_SQL = """(CASE WHEN CAST(strftime('%w',ts,'unixepoch') AS INT) BETWEEN 1 AN
          OR CAST(strftime('%H',ts,'unixepoch') AS INT) BETWEEN 6 AND 9)
     THEN 1 ELSE 0 END)"""
 _cache_lock = threading.Lock()
+generation = 0  # dashboard aggregates include the rates in effect when they were built
 
 
 def _validate(row):
@@ -127,7 +128,9 @@ price_for.cache_clear = _price_for.cache_clear
 def reload():
     """Discard cached files and lookups after a price file changes."""
     # A concurrent lookup must not repopulate the caches with pre-update results.
+    global generation
     with _cache_lock:
+        generation += 1
         _table.cache_clear()
         _auto_table.cache_clear()
         price_for.cache_clear()

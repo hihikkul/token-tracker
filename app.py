@@ -208,11 +208,8 @@ def main():
         print(export(db, a.export), "->", a.export)
         return
 
-    for old in paths.APP_ROOT.glob("*.old"):  # a launcher renamed aside by the last update
-        try:
-            old.unlink()
-        except OSError:
-            pass
+    from tracker import updater
+    updater.cleanup_launcher(paths.APP_ROOT)
     port = a.port or paths.load_config().get("port", 8765)
     t0 = time.time()
     instance = claim_instance(port, a.wait_port)
@@ -221,7 +218,6 @@ def main():
     engine, httpd = None, None
     try:
         if a.wait_port:  # the old copy has released both its lock and its dashboard
-            from tracker import updater
             updater.log(f"new copy v{updater.local_version()} started after {time.time() - t0:.1f}s wait")
             if os.name == "nt":
                 import threading

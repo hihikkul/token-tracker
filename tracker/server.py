@@ -1,10 +1,11 @@
 """Local-only HTTP server (127.0.0.1) for the dashboard."""
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import paths, ranking, sources, stats, updater
+from . import export, paths, pricing, ranking, sources, stats, updater
 from .sources import enabled
 from .limits import all_limits
 from .db import DB
@@ -23,6 +24,33 @@ LOOPBACK_NAMES = ("127.0.0.1", "localhost", "[::1]")
 
 
 def make_handler(engine):
+    cache_key, cached = None, None
+    cache_lock = threading.Lock()
+
+    def dashboard_data():
+        nonlocal cache_key, cached
+        selected = set(enabled())
+        names = frozenset(name for key, name in sources.names().items() if key in selected)
+        with cache_lock:
+            now = time.time()
+            sig = engine.db.query('SELECT (SELECT COUNT(*) FROM records) AS n, '
+                                  '(SELECT MAX(ts) FROM records WHERE ts<=?) AS last', (now,))[0]
+            key = (sig['n'], sig['last'], engine.db.record_generation, pricing.generation, names)
+            if key != cache_key:
+                data = export.dashboard_rows(engine.db, now)
+                for field in ('daily_detail', 'hours_detail'):
+                    data[field] = [r for r in data[field] if r['tool'] in names]
+                models = {r['model'] for r in data['daily_detail']}
+                data['prices'] = {m: p for m, p in data['prices'].items() if m in models}
+                cached, cache_key = data, key
+            snap = engine.snapshot
+            meta = {'last_scan': snap.get('updated'), 'source_meta': sources.meta()}
+            if not cached['daily_detail']:
+                meta['selected_tools'] = sorted(names)
+                meta['checked_dirs'] = {s: r.get('dirs', []) for s, r in (snap.get('scan') or {}).items()
+                                        if isinstance(r, dict)}
+            return dict(cached, meta=meta)
+
     class H(BaseHTTPRequestHandler):
         timeout = 15
 
@@ -98,18 +126,7 @@ def make_handler(engine):
             if u.path in ("/favicon.png", "/favicon.ico"):
                 return self._send(200, (paths.APP_DIR / "assets" / "token-tracker.png").read_bytes(), "image/png")
             if u.path == "/api/data":
-                from .export import build
-                data = build(engine.db, limits=engine.snapshot.get('limits') or {})
-                cfg = paths.load_config()
-                selected = set(enabled(cfg))
-                names = {name for key, name in sources.names().items() if key in selected}
-                for key in ('daily', 'daily_detail', 'hours_detail', 'unpriced'):
-                    data[key] = [row for row in data.get(key, []) if row['tool'] in names]
-                data["meta"] = {"last_scan": engine.snapshot.get("updated"),
-                                "coverage": stats.coverage(engine.db),
-                                "artifact_url": cfg.get("artifact_url"),
-                                "source_meta": sources.meta()}
-                return self._send(200, data)
+                return self._send(200, dashboard_data())
             if u.path == "/api/stats":
                 days = max(1, min(365, int((q.get("days") or ["30"])[0])))
                 src = (q.get("sources") or [""])[0]
@@ -160,9 +177,14 @@ def make_handler(engine):
                 try:
                     latest = updater.check()
                     mode = 'download' if updater.is_frozen() else 'install'  # git clones update with git pull
-                    if latest and mode == 'install' and getattr(engine, 'update_callback', None):
+                    instructions = None
+                    if not getattr(engine, 'update_callback', None):
+                        mode = 'manual'
+                        instructions = ('앱을 종료한 뒤 설치 폴더에서 git pull --ff-only를 실행하고 다시 시작하세요.'
+                                        if updater.is_git_checkout() else '새 버전을 내려받아 앱을 종료한 뒤 설치하세요.')
+                    elif latest and mode == 'install':
                         engine.update_callback(latest)
-                    return self._send(200, {'current': updater.local_version(), 'latest': latest,
+                    return self._send(200, {'current': updater.local_version(), 'latest': latest, 'instructions': instructions,
                         'mode': mode, 'url': 'https://github.com/hihikkul/token-tracker/releases/latest'})
                 except Exception:
                     return self._send(503, {'error': 'Update check failed. Check your internet connection.'})
@@ -216,7 +238,7 @@ def make_handler(engine):
                         valid = {row['key'] for row in ranking.codex_subscriptions(ranking_limits(engine), cfg)}
                         choices = cfg.setdefault('account_plans', {}).setdefault('codex', {})
                         for key, choice in account_plans['codex'].items():
-                            if key in valid and isinstance(choice, str) and (choice == 'auto' or choice in ranking.PLAN_OPTIONS['codex']):
+                            if key in valid and isinstance(choice, str) and (choice in ('auto', 'excluded') or choice in ranking.PLAN_OPTIONS['codex']):
                                 choices[key] = choice
                     prices = b.get("subscription_usd_month")
                     for src, v in (prices if isinstance(prices, dict) else {}).items():
@@ -236,7 +258,8 @@ def make_handler(engine):
                         wc['opacity'] = opacity
                     if isinstance(b.get('auto_update'), bool):
                         cfg['auto_update'] = b['auto_update']
-                    paths.save_config(cfg)
+                    if not paths.save_config(cfg):
+                        return self._send(500, {'error': '설정을 저장하지 못했습니다. 디스크 공간과 쓰기 권한을 확인하세요.'})
                 engine.poke()
                 ranking._last_sync['t'] = 0
                 return self._send(200, {"ok": True})

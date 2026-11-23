@@ -130,6 +130,7 @@ class RankingGroups(unittest.TestCase):
 
     def save_cfg(self, cfg):
         self.cfg = copy.deepcopy(cfg)
+        return True
 
     def test_migrate_legacy_preserves_server_and_credentials_once(self):
         cfg = {'ranking': dict(server='https://override.invalid', code='EEEE-FFFF', token='secret',

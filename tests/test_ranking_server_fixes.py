@@ -48,6 +48,91 @@ class RankingServerFixes(unittest.TestCase):
         handler._send = Mock()
         return handler, engine
 
+    def test_failed_settings_write_returns_error_without_refresh(self):
+        handler, engine = self.handler()
+        handler._body = Mock(return_value={'auto_update': False})
+        with patch.object(server.paths, 'save_config', return_value=False):
+            handler.do_POST()
+        self.assertEqual(handler._send.call_args.args[0], 500)
+        self.assertIn('error', handler._send.call_args.args[1])
+        engine.poke.assert_not_called()
+
+    def test_failed_create_or_join_undoes_new_membership_not_existing_one(self):
+        issued = {'code':'CCCC-DDDD', 'member_id':'new', 'token':'issued'}
+        for fn, arg in ((ranking.create, 'name'), (ranking.join, issued['code'])):
+            with self.subTest(fn=fn), patch.object(ranking.paths, 'save_config', return_value=False), \
+                    patch.object(ranking, '_call', side_effect=[issued, ranking.RankingError('offline')]) as call:
+                with self.assertRaisesRegex(ranking.RankingError, '저장'):
+                    fn(arg, 'me')
+                self.assertEqual(call.call_args.args, ('DELETE', '/v1/groups/CCCC-DDDD/me'))
+                self.assertEqual(call.call_args.kwargs['token'], 'issued')
+                self.assertEqual(self.cfg['ranking_groups'][0]['token'], 'private')
+
+    def test_global_expiration_clears_only_expired_member_not_network_errors(self):
+        from urllib.error import HTTPError, URLError
+        for code, message, expired in [(401,'bad token',True), (403,'denied',True),
+                                       (404,'member not found',True), (404,'not found',False), (0,'offline',False)]:
+            self.cfg['ranking_global'] = {'token':'old', 'nick':'name'}
+            error = (HTTPError('https://example.invalid', code, '', {}, io.BytesIO(json.dumps({'error':message}).encode()))
+                     if code else URLError('offline'))
+            with self.subTest(code=code, message=message), patch.object(ranking, 'sync'), \
+                    patch.object(ranking.urllib.request, 'urlopen', side_effect=error):
+                with self.assertRaises(ranking.RankingError):
+                    ranking.global_ranking(self.db, {}, 'month')
+                self.assertEqual(ranking.global_state()['joined'], not expired)
+                self.assertEqual(ranking.global_state()['expired'], expired)
+                self.assertEqual(self.cfg['ranking_groups'][0]['token'], 'private')
+
+    def test_groups_never_receive_tokens_when_global_also_syncs(self):
+        self.cfg['ranking_global'] = {'token':'global'}
+        self.record('usage', input=10)
+        with patch.object(ranking, '_call') as send:
+            ranking.sync(self.db, {}, force=True)
+        for call in send.call_args_list:
+            for values in call.args[2]['periods'].values():
+                if call.args[1] == '/v1/global/score':
+                    self.assertEqual(values['tokens'], 10)
+                else:
+                    self.assertNotIn('tokens', values)
+        self.assertEqual(send.call_count, 2)
+
+    def test_exclude_old_codex_subscription_via_settings_then_restore(self):
+        handler, engine = self.handler()
+        self.cfg['sources'].update(codex=True, claude=False)
+        limits = {'codex': {'accounts': [{'account': a, 'plan':'Plus'} for a in ('old','new')]}}
+        engine.snapshot['limits'] = limits
+        key = ranking.account_key('old')
+        for choice, monthly in (('auto',40), ('excluded',20), ('invalid',20), ('plus',40)):
+            handler._body = Mock(return_value={'account_plans':{'codex':{key:choice, 'fake':'excluded'}}})
+            handler.do_POST()
+            rep = ranking.report(self.db, limits, self.cfg)
+            self.assertEqual(rep['periods']['month']['sub'], monthly)
+            self.assertEqual(rep['subscriptions']['codex']['usd'], monthly)
+            self.assertNotIn('fake', self.cfg['account_plans']['codex'])
+            self.assertEqual(len(ranking.codex_subscriptions(limits, self.cfg)), 2)
+
+    def test_dashboard_only_update_has_manual_instructions(self):
+        handler, engine = self.handler('/api/update')
+        engine.update_callback = None
+        handler._body = Mock(return_value={})
+        with patch.object(server.updater, 'check', return_value='new'), patch.object(server.updater, 'is_git_checkout', return_value=True):
+            handler.do_POST()
+        data = handler._send.call_args.args[1]
+        self.assertEqual(data['mode'], 'manual')
+        self.assertIn('git pull', data['instructions'])
+
+    def test_empty_dashboard_reports_checked_folders_only_after_scan(self):
+        handler, engine = self.handler('/api/data')
+        engine.snapshot = {'updated': 0, 'scan': {}}
+        handler.do_GET()
+        self.assertFalse(handler._send.call_args.args[1]['meta']['last_scan'])
+        engine.snapshot = {'updated': 123, 'scan': {'claude': {'dirs':['logs'], 'files':0}}}
+        handler.do_GET()
+        meta = handler._send.call_args.args[1]['meta']
+        self.assertEqual(meta['last_scan'], 123)
+        self.assertEqual(meta['selected_tools'], ['Claude Code'])
+        self.assertEqual(meta['checked_dirs'], {'claude':['logs']})
+
     def test_group_leave_offline_keeps_membership_and_returns_error(self):
         handler, _ = self.handler('/api/ranking/leave')
         handler._body = Mock(return_value={'code': 'AAAA-BBBB'})
@@ -221,19 +306,29 @@ class RankingServerFixes(unittest.TestCase):
     def test_data_keeps_all_enabled_registry_rows_and_adds_metadata(self):
         handler, _ = self.handler('/api/data')
         self.cfg['sources'].update(deepseek=True, other=True)
-        rows = [{'tool': name} for name in ('Claude Code', 'DeepSeek', 'Other models', 'Codex')]
-        data = {key: copy.deepcopy(rows) for key in ('daily', 'daily_detail', 'hours_detail')}
-        data['unpriced'] = [{'model': 'unknown', 'tool': 'Other models', 'tokens': 5}]
+        for src in ('claude', 'codex', 'deepseek', 'other'):
+            self.record(src, source=src, input=100, ts=123)
         with patch.dict(sources.NAMES, {'deepseek': 'DeepSeek', 'other': 'Other models'}), \
-                patch.object(export, 'build', return_value=data), \
-                patch.object(server.stats, 'coverage', return_value={}):
+                patch.object(export, '_codex_titles', side_effect=AssertionError('export-only query')), \
+                patch.object(export, 'dashboard_rows', wraps=export.dashboard_rows) as build:
             handler.do_GET()
-        response = handler._send.call_args.args[1]
-        for key in ('daily', 'daily_detail', 'hours_detail'):
-            self.assertEqual([r['tool'] for r in response[key]], ['Claude Code', 'DeepSeek', 'Other models'])
-        self.assertIn('deepseek', response['meta']['source_meta'])
-        self.assertEqual(response['meta']['last_scan'], 42)
-        self.assertEqual(response['unpriced'], data['unpriced'])
+            response = handler._send.call_args.args[1]
+            self.assertEqual(set(response), {'daily_detail', 'hours_detail', 'prices', 'meta'})
+            for key in ('daily_detail', 'hours_detail'):
+                self.assertEqual({r['tool'] for r in response[key]}, {'Claude Code', 'DeepSeek', 'Other models'})
+                self.assertTrue({'project', 'date', 'tool', 'model', 'tokens'} <= response[key][0].keys())
+            self.assertTrue({'cost_usd','input','output','cache_read','cache_write','peak'} <= response['daily_detail'][0].keys())
+            self.assertTrue({'weekday', 'hour'} <= response['hours_detail'][0].keys())
+            self.assertIn('deepseek', response['meta']['source_meta'])
+            self.assertEqual(response['meta']['last_scan'], 42)
+            handler.do_GET()
+            build.assert_called_once()
+            pricing.reload()
+            handler.do_GET()
+            self.assertEqual(build.call_count, 2)
+            self.record('claude', input=200, ts=123)  # count and latest timestamp unchanged
+            handler.do_GET()
+            self.assertEqual(build.call_count, 3)
 
     def test_payg_spend_is_separate_and_never_uploaded(self):
         self.record('subscription', input=1000000)

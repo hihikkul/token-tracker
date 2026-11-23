@@ -359,7 +359,7 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
 .new-source { display: inline-block; font-size: 11px; font-weight: 400; white-space: nowrap; color: var(--ink2); background: var(--card2); border: 1px solid var(--edge); border-radius: 999px; padding: 1px 6px; }
 .source-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; overflow-wrap: anywhere; }
 .source-banner .btn { flex: none; min-height: 44px; }
-#sourceForm label, #ratio-payg, #unpriced-note { overflow-wrap: anywhere; }
+#sourceForm label, #ratio-payg, #unpriced-note, #empty-all { overflow-wrap: anywhere; }
 #sourceForm label { min-width: 0; }
 #ratio-payg { margin-top: 10px; }
 @media (max-width: 720px) { #tool button, #provider-legend button { min-height: 44px; }.ratio { padding: 18px 14px; }.rrow .nm div { flex-wrap: wrap; }.rrow .nm b, .lim-h b { overflow-wrap: anywhere; }.lim-h { flex-wrap: wrap; } }
@@ -939,7 +939,16 @@ addEventListener('hashchange', () => { readHash(); render(); if (st.view === 'ra
 
 function draw() { writeHash(); segs(); chips(); hero(); hours(); daily(); mix(); cumulative(); monthly(); models(); projects(); }
 function render() { applyView(); refreshToolButtons(); limitsView(); ratioView(); unpricedView(); if (st.view !== 'main') return; if (!DATA.daily.length) { showEmpty(); return; } $('main').hidden = false; $('empty-all').hidden = true; draw(); }
-function showEmpty() { $('main').hidden = true; $('empty-all').hidden = false; }
+function showEmpty() {
+  const box = $('empty-all'), meta = DATA.meta || {};
+  $('main').hidden = true; box.hidden = false;
+  if (!meta.last_scan) { box.textContent = '첫 스캔 중입니다. 사용량 기록을 읽고 있어요…'; return; }
+  const dirs = Object.entries(meta.checked_dirs || {}).map(([key, paths]) => el('div', '', `${sourceName(key)}: ${paths.join(', ') || '폴더 없음'}`));
+  box.replaceChildren(el('strong', '', '스캔 완료 · 선택한 도구의 사용 기록이 없어요.'),
+    el('div', '', '선택한 도구: ' + ((meta.selected_tools || []).join(', ') || '없음')),
+    el('div', '', '확인한 로그 폴더'), ...dirs,
+    el('p', '', '설정에서 표시할 도구를 확인하세요. 해당 CLI에서 대화를 한 번 마친 뒤 오른쪽 위의 로그 다시 읽기를 눌러 주세요.'));
+}
 
 // ---------- remaining limits (same numbers as the widget)
 const wl = (s) => s.replace('Weekly','주간').replace('5h','5시간').replace('Apps','앱');
@@ -1019,9 +1028,12 @@ function sourceBanners() {
   }
 }
 function unpricedView() {
-  const rows = (DATA.unpriced || []).filter(passTool), note = $('unpriced-note');
-  note.textContent = rows.length ? '가격 미확인 모델(비용 제외): ' + rows.map(row => `${row.model} ${tok(row.tokens || 0)} 토큰`).join(' · ') : '';
-  note.hidden = st.view !== 'main' || !rows.length;
+  const note = $('unpriced-note'), totals = new Map();
+  if (DATA.daily.length) for (const r of rows()) {
+    if (r.cost_usd == null && r.tokens > 0) totals.set(r.model, (totals.get(r.model) || 0) + r.tokens);
+  }
+  note.textContent = totals.size ? '가격 미확인 모델(비용 제외): ' + [...totals].map(([model, n]) => `${model} ${tok(n)} 토큰`).join(' · ') : '';
+  note.hidden = st.view !== 'main' || !totals.size;
 }
 
 function settingsView() {
@@ -1048,7 +1060,7 @@ function settingsView() {
   for (const account of accounts) {
     const label=el('label'), select=el('select'); select.className='account-plan'; select.dataset.key=account.key;
     label.append(`${account.label} · 감지: ${account.detected_plan || '요금제 미확인'}`);
-    select.append(new Option('자동 감지','auto'));
+    select.append(new Option('자동 감지','auto'), new Option('현재 구독에서 제외','excluded'));
     for (const [id,[name,price]] of Object.entries(SOURCE_SETTINGS.plan_options?.codex || {}))
       select.append(new Option(`${name.replace(' (annual)',' · 연간 결제')} · ${price == null ? '가격 미확인' : price === 0 ? '무료' : usd(price)+'/월'}`,id));
     select.value=SOURCE_SETTINGS.account_plans?.codex?.[account.key] || (accounts.length===1 ? SOURCE_SETTINGS.subscription_plans?.codex : null) || 'auto'; label.append(select); accountBox.append(label);
@@ -1077,7 +1089,7 @@ $('settingsForm').onsubmit = async event => {
   $('settingsStatus').textContent='저장 중…';
   try {
     const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if (!response.ok) throw new Error('설정을 저장하지 못했습니다');
+    if (!response.ok) throw new Error((await response.json()).error || '설정을 저장하지 못했습니다');
     await loadSettings(); await loadRatio(); $('settingsStatus').textContent='저장했습니다. 작업 표시줄·자동 업데이트 변경은 앱을 다시 실행하면 적용됩니다.';
   } catch(error) { $('settingsStatus').textContent=koMessage(error.message); }
 };
@@ -1100,7 +1112,7 @@ async function loadSettings() {
 $('sourceForm').onchange = async () => {
   const sources = Object.fromEntries(Array.from($('sourceForm').elements).map(input => [input.name,input.checked]));
   const response = await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sources})});
-  if (!response.ok) { $('status').textContent='설정 저장 실패'; return; }
+  if (!response.ok) { $('settingsStatus').textContent=(await response.json()).error || '설정 저장 실패'; await loadSettings(); return; }
   await loadSettings(); await Promise.all([load(),loadLimits(),loadRatio()]);
 };
 function limitsView() {
@@ -1185,9 +1197,9 @@ function ratioView() {
   $('r-v').textContent = P.ratio == null ? '×-' : '×' + xfmt(P.ratio);
   $('r-sub').replaceChildren(`${PLABEL[st.rp]} 구독 `, el('b', '', usd(P.sub)), '로 ', el('b', '', usd(P.api)), '어치 사용');
   const toolLabel = (t = {}, key = '') => String(t.label || sourceName(t.source || key)).replace('account unknown','계정 미확인');
-  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `무료·가격 또는 계정 미확인으로 합계 배율에서 제외: ${P.excluded.map(key => toolLabel(P.tools?.[key], key)).join(', ')}. 확인된 계정은 각각 계산합니다.` : '';
+  $('ratio-excluded').textContent = P.excluded && P.excluded.length ? `구독 제외·무료·가격 또는 계정 미확인으로 합계 배율에서 제외: ${P.excluded.map(key => toolLabel(P.tools?.[key], key)).join(', ')}. 확인된 계정은 각각 계산합니다.` : '';
   const payg = Object.entries(P.payg || {}), paygLine = $('ratio-payg');
-  paygLine.textContent = payg.length ? '종량제 API(실제 지출, 배율 제외): ' + payg.map(([key, t]) => `${toolLabel(t, key)} ${usd(t.api)}`).join(' · ') : '';
+  paygLine.textContent = payg.length ? '종량제 API 정가 환산액 (청구액 아님, 배율 제외): ' + payg.map(([key, t]) => `${toolLabel(t, key)} ${usd(t.api)}`).join(' · ') : '';
   paygLine.hidden = !payg.length;
   const gain = P.api - P.sub, g = $('r-gain');
   g.textContent = P.sub ? (gain >= 0 ? `${usd(gain)} 이득` : `${usd(-gain)} 덜 씀`) : '구독료를 알 수 없어요';
@@ -1198,7 +1210,7 @@ function ratioView() {
     const row = el('div', 'rrow'); const nm = el('div', 'nm'); const top = el('div'); const i = el('i');
     const source=t.source || src; i.style.background=sourceColor(source);
     top.append(i, el('b', '', toolLabel(t, src))); if (t.plan) top.append(el('span', 'plan', t.plan));
-    nm.append(top, el('small', '', t.monthly ? `${t.from === 'selection' ? '선택한 요금제' : t.from === 'config' ? '기존 설정' : '감지한 요금제'} ${usd(t.monthly)}/월` : t.monthly === 0 ? '무료 요금제' : t.label?.includes('account unknown') ? '로그에 계정 ID 없음 · 배율에서 제외' : '가격 미확인 · 설정에서 요금제 선택'));
+    nm.append(top, el('small', '', t.monthly ? `${t.from === 'selection' ? '선택한 요금제' : t.from === 'config' ? '기존 설정' : '감지한 요금제'} ${usd(t.monthly)}/월` : t.from === 'excluded' ? '현재 구독에서 제외' : t.monthly === 0 ? '무료 요금제' : t.label?.includes('account unknown') ? '로그에 계정 ID 없음 · 배율에서 제외' : '가격 미확인 · 설정에서 요금제 선택'));
     const bar = el('div', 'rbar'); const f = el('span'); f.style.width = (100 * t.api / mx) + '%'; f.style.background = sourceColor(source); bar.append(f);
     if (t.sub) { const m = el('em'); m.style.left = (100 * t.sub / mx) + '%'; m.title = '구독료 (본전)'; bar.append(m); }
     const amt = el('span', 'amt'); amt.append(el('b', '', usd(t.api)), ' / ' + (t.sub ? usd(t.sub) : '-'));
@@ -1308,7 +1320,7 @@ function globalView() {
     text.append('구독료를 얼마나 뽑아 쓰고 있는지 다른 사용자들과 비교해 보세요. 배율은 ', el('strong', '', 'API로 썼다면 냈을 금액 ÷ 실제 구독료'), '예요.');
     const f = el('form', 'global-join'), l = el('label', '', '랭킹에 표시할 닉네임'), i = el('input');
     i.name = 'nick'; i.maxLength = 24; i.placeholder = '비워 두면 무작위 이름'; i.value = S.nick || ''; l.append(i);
-    const b = el('button', 'btn primary', '참여하기'); b.type = 'submit'; f.append(l, b);
+    const b = el('button', 'btn primary', S.expired ? '다시 참가' : '참여하기'); b.type = 'submit'; f.append(l, b);
     f.onsubmit = async e => { e.preventDefault(); b.disabled = true; await rankingAction('/api/ranking/global/join', { nick: i.value }, f); b.disabled = false; };
     left.append(text, f, el('div', 'note', '언제든 그만두면 서버에서 기록이 지워져요.'));
     const privacy = el('aside', 'global-privacy');
@@ -1569,11 +1581,11 @@ async function load(quiet) {
     const r = await fetch('/api/data', { cache: 'no-store' });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
-    DATA = { daily: d.daily_detail || d.daily || [], hours: d.hours_detail || d.hours || [], prices: d.prices || {}, unpriced: d.unpriced || [] };
+    DATA = { daily: d.daily_detail || [], hours: d.hours_detail || [], prices: d.prices || {}, meta: d.meta || {} };
     if (d.meta?.source_meta) SOURCE_SETTINGS.source_meta = d.meta.source_meta;
     sourceBanners(); prepare(); render();
     const t = d.meta && d.meta.last_scan;
-    $('status').textContent = t ? `${tfmt(new Date(t * 1000))} 업데이트` : '업데이트됨';
+    $('status').textContent = t ? `${tfmt(new Date(t * 1000))} 업데이트` : '첫 스캔 중…';
   } catch (e) {
     if (!quiet) { $('status').textContent = '사용량을 불러오지 못했습니다. 로그 다시 읽기를 눌러주세요'; $('empty-all').textContent = '사용량 로딩 실패'; }
   }
@@ -1605,6 +1617,7 @@ $('updateBtn').onclick = async () => {
     }
     else {
       $('status').replaceChildren(`v${result.latest} 사용 가능 · `);
+      if (result.mode === 'manual') $('status').append(result.instructions + ' ');
       const link=el('a','',result.mode === 'git' ? '설치 파일 다운로드 (개발용 폴더는 git pull)' : '새 버전 다운로드'); link.href=result.url; link.target='_blank'; $('status').append(link);
     }
   } catch(error) { $('status').textContent=koMessage(error.message); }

@@ -240,6 +240,17 @@ class LimitsFixes(unittest.TestCase):
                 self.assertEqual(result['status'], 'relogin')
                 self.assertEqual(result['message'], 'Open Claude Code once to renew the sign-in (macOS keychain)')
 
+    def test_claude_extra_budget_and_non_window_usage_never_become_windows(self):
+        self.server.body = {'five_hour': {'utilization': 35}, 'seven_day': {'utilization': 10},
+                            'extra_usage': {'is_enabled': True, 'utilization': 100},
+                            'other_budget': {'utilization': 99}}
+        result = self._keychain_fetch({'accessToken': 'token'})
+        self.assertEqual([w['key'] for w in result['windows']], ['five_hour', 'seven_day'])
+        self.assertEqual(result['extra']['utilization'], 100)
+        result['windows'].append({'key':'extra_usage', 'used_percent':100})
+        self.db.set_kv('claude_limits', result)
+        self.assertEqual([w['key'] for w in limits.fetch_claude(self.db)['windows']], ['five_hour', 'seven_day'])
+
     def test_valid_keychain_login_can_still_read_usage_without_refresh(self):
         self.server.body = {'five_hour': {'utilization': 12.0, 'resets_at': None}}
         result = self._keychain_fetch({'accessToken': 'old', 'refreshToken': 'r1',

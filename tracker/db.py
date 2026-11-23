@@ -49,35 +49,41 @@ class DB:
             columns = {row['name'] for row in self.conn.execute('PRAGMA table_info(records)')}
             if 'account' not in columns:
                 self.conn.execute('ALTER TABLE records ADD COLUMN account TEXT')
+            if 'codex_base' not in columns:
+                self.conn.execute('ALTER TABLE records ADD COLUMN codex_base INTEGER')
             self.conn.commit()
+        self.record_generation = 0
 
     # ------------------------------------------------------------ records
     def upsert_records(self, rows):
         """rows: iterable of dicts. Same uid seen twice keeps the larger counts
         (Claude Code writes one message several times while it streams)."""
-        sql = """
-        INSERT INTO records(uid, source, ts, model, project, session, account,
+        # Codex deltas are reconciled against their previous cumulative reading by the
+        # collector; a better baseline can legitimately make the stored counts smaller.
+        counts = ', '.join(f'{k} = CASE WHEN excluded.codex_base IS NOT NULL THEN excluded.{k} '
+                           f'ELSE max({k}, excluded.{k}) END'
+                           for k in ('input', 'output', 'cache_write', 'cache_read', 'reasoning'))
+        sql = f"""
+        INSERT INTO records(uid, source, ts, model, project, session, account, codex_base,
                             input, output, cache_write, cache_read, reasoning)
-        VALUES(:uid, :source, :ts, :model, :project, :session, :account,
+        VALUES(:uid, :source, :ts, :model, :project, :session, :account, :codex_base,
                :input, :output, :cache_write, :cache_read, :reasoning)
         ON CONFLICT(uid) DO UPDATE SET
             source = excluded.source,
-            input = max(input, excluded.input),
-            output = max(output, excluded.output),
-            cache_write = max(cache_write, excluded.cache_write),
-            cache_read = max(cache_read, excluded.cache_read),
-            reasoning = max(reasoning, excluded.reasoning),
+            codex_base = excluded.codex_base,
+            {counts},
             model = CASE WHEN excluded.model IS NOT NULL AND excluded.model != ''
                          AND (excluded.model NOT IN ('gemini', 'codex')
                               OR model IS NULL OR model IN ('', 'gemini', 'codex'))
                          THEN excluded.model ELSE model END,
-            account = excluded.account
+            account = CASE WHEN excluded.source = 'codex' AND uid LIKE 'c:%'
+                           THEN coalesce(excluded.account, account) ELSE excluded.account END
         """
         rows = list(rows)
         if not rows:
             return 0
         for r in rows:
-            for k in ("model", "project", "session", "account"):
+            for k in ("model", "project", "session", "account", "codex_base"):
                 r.setdefault(k, None)
             for k in ("input", "output", "cache_write", "cache_read", "reasoning"):
                 r[k] = int(r.get(k) or 0)
@@ -85,6 +91,7 @@ class DB:
             try:
                 self.conn.executemany(sql, rows)
                 self.conn.commit()
+                self.record_generation += 1
             except Exception:
                 self.conn.rollback()
                 raise

@@ -45,7 +45,7 @@ const context = {
   localStorage: {getItem:key => storage.get(key), setItem:(key,value) => storage.set(key,value)},
   Option: function(text,value) { const node = new Node('option'); node.textContent = text; node.value = value; return node; },
   addEventListener() {}, scrollTo() {}, setTimeout, clearTimeout,
-  d3: {timeFormat:() => () => '11/17 12:00', max:(rows,fn = x => x) => Math.max(...rows.map(fn)), sum:(rows,fn = x => x) => rows.reduce((sum,row) => sum + fn(row),0)},
+  d3: {timeFormat:format => format === '%Y-%m-%d' ? d => [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-') : () => '11/17 12:00', max:(rows,fn = x => x) => Math.max(...rows.map(fn)), sum:(rows,fn = x => x) => rows.reduce((sum,row) => sum + fn(row),0)},
 };
 vm.createContext(context);
 vm.runInContext(js.slice(0, js.lastIndexOf("$('empty-all').textContent='사용량 기록을 읽는 중…';")), context);
@@ -91,7 +91,7 @@ assert(html.includes('--deepseek: #6250d6')); assert(html.includes('--deepseek: 
         self.node(r'''
 run(`SOURCE_SETTINGS={source_names:{deepseek:'DeepSeek',qwen:'Qwen'},source_meta:{deepseek:{kind:'payg'}}};
 RATIO={periods:{month:{api:20,sub:10,ratio:2,tools:{claude:{label:'Claude',api:20,sub:10,ratio:2}},payg:{deepseek:{label:'DeepSeek',api:1.23},qwen:{label:'Qwen',api:.4}}},day:{tools:{},payg:{deepseek:{label:'DeepSeek',api:.2}}}}}; ratioView();`);
-assert.equal(get('ratio-payg').textContent,'종량제 API(실제 지출, 배율 제외): DeepSeek $1.23 · Qwen $0.40');
+assert.equal(get('ratio-payg').textContent,'종량제 API 정가 환산액 (청구액 아님, 배율 제외): DeepSeek $1.23 · Qwen $0.40');
 assert(!get('r-rows').textContent.includes('DeepSeek')); assert.equal(get('r-rows').children.length,1);
 run("st.rp='day'; ratioView()");
 assert.equal(get('ratio-card').hidden,false); assert.equal(get('r-rows').children.length,0);
@@ -106,7 +106,8 @@ run("RATIO={periods:{day:{}}}; ratioView()"); assert.equal(get('ratio-card').hid
 assert(!/\.innerHTML\s*=|\.outerHTML\s*=|insertAdjacentHTML|\.html\s*\(/.test(js));
 context.bad = '<img src=x onerror=alert(1)>';
 run(`SOURCE_SETTINGS={source_names:{deepseek:bad},source_meta:{deepseek:{kind:'payg',detected:true,first_seen:Date.now()/1000}}};
-refreshToolButtons(); sourceBanners(); DATA.unpriced=[{model:bad,tool:bad,tokens:12300000}]; unpricedView();
+refreshToolButtons(); sourceBanners(); st.range='all'; FIRST='2026-01-01';
+DATA.daily=[{date:FIRST,model:bad,tool:bad,tokens:12300000}]; unpricedView();
 RATIO={periods:{month:{tools:{},payg:{deepseek:{label:bad,api:1.23}}}}}; ratioView();`);
 assert(get('tool').textContent.includes(context.bad));
 assert(get('unpriced-note').textContent.includes(context.bad+' 12.3M 토큰'));
@@ -120,6 +121,30 @@ run('ANNOUNCED_SOURCES.clear(); sourceBanners()'); assert.equal(get('source-bann
 context.localStorage.getItem = () => { throw new Error('blocked'); };
 run("SOURCE_SETTINGS.source_meta.qwen={detected:true,first_seen:1}; sourceBanners(); sourceBanners()");
 assert.equal(get('source-banners').children.length,1);
+''')
+
+    def test_unpriced_uses_period_tool_model_and_project_not_fixed_90_days(self):
+        self.node(r'''
+context.d3.timeDay={offset:(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n)};
+run(`FIRST='2025-01-01'; LAST='2026-11-20'; st.range='all'; st.tool='Codex'; st.project='p'; st.model='x';
+DATA.daily=[{tool:'Codex',project:'p',model:'x',tokens:10,date:FIRST},
+{tool:'Codex',project:'p',model:'x',tokens:20,date:LAST},
+{tool:'Codex',project:'p',model:'z',tokens:30,date:LAST},
+{tool:'Codex',project:'q',model:'x',tokens:40,date:LAST},
+{tool:'Other',project:'p',model:'x',tokens:50,date:LAST},
+{tool:'Codex',project:'p',model:'x',tokens:60,date:LAST,cost_usd:0}]; unpricedView()`);
+assert(get('unpriced-note').textContent.endsWith('x 30 토큰'));
+run("st.range='7'; unpricedView()"); assert(get('unpriced-note').textContent.endsWith('x 20 토큰'));
+run("st.project='absent'; unpricedView()"); assert(get('unpriced-note').hidden);
+''')
+
+    def test_empty_scan_and_expired_ranking_have_recovery_actions(self):
+        self.node(r'''
+run('showEmpty()'); assert(get('empty-all').textContent.includes('첫 스캔 중'));
+run("DATA.meta={last_scan:42,selected_tools:['Codex'],checked_dirs:{codex:['example/sessions']}}; showEmpty()");
+for (const text of ['스캔 완료','선택한 도구: Codex','example/sessions','로그 다시 읽기']) assert(get('empty-all').textContent.includes(text));
+run("GRANK={state:{expired:true, joined:false},error:'expired'}; globalView()");
+assert(get('global-card').querySelectorAll('button').some(b=>b.textContent==='다시 참가'));
 ''')
 
     def test_balance_currency_availability_and_absent_quota(self):

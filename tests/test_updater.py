@@ -57,6 +57,11 @@ class SwapIn(unittest.TestCase):
                 updater._swap_in(self.new, self.root, self.backup)
         self.assertEqual(read(self.root), OLD)  # VERSION still old, so the update is offered again
 
+    def test_cleanup_preserves_unrelated_old_files(self):
+        tree(self.root, {'notes.old': 'keep', 'Other.exe.old': 'keep', 'TokenTracker.exe.old': 'remove'})
+        updater.cleanup_launcher(self.root)
+        self.assertEqual(read(self.root), dict(OLD, **{'notes.old': 'keep', 'Other.exe.old': 'keep'}))
+
     def test_running_exe_is_renamed_aside_and_restored_on_failure(self):
         tree(self.root, {'TokenTracker.exe': 'old exe'})
         tree(self.new, {'TokenTracker.exe': 'new exe'})

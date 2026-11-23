@@ -109,6 +109,16 @@ def apply(expected):
         _swap_in(new, _root(), Path(tmp) / "backup")
 
 
+_LAUNCHER = 'TokenTracker.exe'
+
+
+def cleanup_launcher(root):
+    try:
+        (root / (_LAUNCHER + '.old')).unlink()
+    except OSError:
+        pass
+
+
 def _replace_file(src, dst):
     """Put a copy of src at dst in one step. Returns where a running exe was renamed aside
     (it can't be overwritten on Windows, but it can be renamed), else None."""
@@ -120,6 +130,8 @@ def _replace_file(src, dst):
             os.replace(part, dst)
             return None
         except PermissionError:
+            if dst.name != _LAUNCHER:
+                raise
             aside = dst.with_name(dst.name + ".old")
             try:
                 aside.unlink()
