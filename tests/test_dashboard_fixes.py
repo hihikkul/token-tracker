@@ -60,6 +60,22 @@ class DashboardFixes(unittest.TestCase):
                                 capture_output=True, text=True, encoding='utf-8', timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_narrow_chart_dimensions_are_clamped(self):
+        self.node(r'''
+assert.equal(run('chartWidth({clientWidth:1},500)'),160);
+assert.equal(run('chartWidth({clientWidth:0},500)'),500);
+assert.equal(run('chartWidth({clientWidth:800},500)'),800);
+for (const width of [
+  'Math.max(0, W - x30)', 'Math.max(0, x.step())', 'Math.max(0, bw)',
+  'Math.max(0, W - ml)', 'Math.max(0, d.x1 - d.x0)',
+  'Math.max(0, cw - 4)', 'Math.max(0, cw - 3)',
+  'Math.max(0, Math.min(28, x.bandwidth()))',
+  'Math.max(0, Math.min(56, x.bandwidth()))',
+]) assert(js.includes(width), 'missing width clamp: ' + width);
+assert(js.includes('Math.max(0, d.y1 - d.y0)'));
+assert.equal((js.match(/chartWidth\(box,/g) || []).length,7);
+''')
+
     def test_detected_tool_hash_round_trip_and_no_codex_fallback(self):
         self.node(r'''
 run(`SOURCE_SETTINGS = {sources:{},source_names:{codex:'Codex',deepseek:'DeepSeek'},source_meta:{}};

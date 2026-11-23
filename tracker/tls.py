@@ -14,6 +14,10 @@ from .paths import APP_DIR
 
 def context():
     ctx = ssl.create_default_context()
+    # Python 3.13+ also rejects certificates that break RFC 5280 details (e.g. no Authority Key
+    # Identifier). Company proxies that re-sign HTTPS often issue those; browsers and older Pythons
+    # accept them. The chain and host name are still verified.
+    ctx.verify_flags &= ~getattr(ssl, "VERIFY_X509_STRICT", 0)
     try:
         ctx.load_verify_locations(cafile=str(APP_DIR / "assets" / "cacert.pem"))
     except (OSError, ssl.SSLError):
