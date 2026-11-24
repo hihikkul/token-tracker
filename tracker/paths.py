@@ -7,6 +7,8 @@ import threading
 import time
 from pathlib import Path
 
+from . import ollama
+
 HOME = Path.home()
 if getattr(sys, "frozen", False):  # packaged app: data files sit next to the bundled code
     APP_ROOT = APP_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
@@ -212,6 +214,7 @@ def load_config() -> dict:
             save_config(cfg)
         if migrate_ranking(cfg):
             save_config(cfg)
+        cfg['ollama'] = ollama.config(cfg.get('ollama'))
     return cfg
 
 

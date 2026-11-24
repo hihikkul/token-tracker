@@ -118,8 +118,11 @@ def _price_for(model):
 def price_for(model):
     if not model:
         return None
+    model = model.lower()
+    if model.startswith('ollama/'):
+        return dict.fromkeys(_FIELDS, 0)
     with _cache_lock:
-        return _price_for(model.lower())
+        return _price_for(model)
 
 
 price_for.cache_clear = _price_for.cache_clear
@@ -245,11 +248,13 @@ def _refresh_auto(db, now):
         curated = _table()[0]
     models = {row["model"].lower() for row in db.query("SELECT DISTINCT model FROM records")
               if isinstance(row["model"], str) and row["model"] and not row["model"].startswith("_")}
-    unknown = {model for model in models if _curated_price(model, curated) is None}
+    unknown = {model for model in models
+               if not model.startswith('ollama/') and _curated_price(model, curated) is None}
     path = data_dir() / _AUTO_FILE
     previous = _read_object(path, [])
     old_rows = _validated_rows(previous)
-    rows = {model: row for model, row in old_rows.items() if _curated_price(model, curated) is None}
+    rows = {model: row for model, row in old_rows.items()
+            if not model.startswith('ollama/') and _curated_price(model, curated) is None}
     meta = previous.get("_meta")
     meta = dict(meta) if isinstance(meta, dict) else {"fetched_at": 0, "sources": []}
     tried = meta.get("tried") if isinstance(meta.get("tried"), dict) else {}

@@ -388,6 +388,10 @@ svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
     <h3>표시할 앱</h3><form id="sourceForm" style="display:flex;flex-wrap:wrap;gap:16px;margin:12px 0"></form>
     <p class="note">연결되지 않은 앱은 위젯과 한도 카드에서 숨깁니다.</p>
     <form id="settingsForm">
+      <h3>Ollama</h3>
+      <label><input name="ollama_enabled" type="checkbox" disabled> 사용량 기록</label>
+      <p class="note">앱에서 Ollama 주소를 <code class="mono" id="ollamaUrl">http://127.0.0.1:11435</code>로 바꾸면 사용량이 기록돼요.</p>
+      <p class="note" id="ollamaStatus" role="status">상태 확인 중…</p>
       <h3>사용 중인 요금제</h3><p class="note">요금제를 선택하면 구독료가 자동으로 계산됩니다. 자동 감지는 앱에서 확인한 요금제를 사용합니다.</p>
       <div id="subscriptionPlans" class="settings-grid"></div>
       <div id="codexAccountPlans" class="settings-grid" hidden></div>
@@ -1001,7 +1005,8 @@ function sourceButton(key, name) {
   button.setAttribute('aria-pressed', String(sourceKey(st.tool) === key));
   if (key !== 'all') { const dot = el('i'); dot.style.background = sourceColor(key); button.append(dot); }
   button.append(el('span', '', name));
-  if (isNewSource(key)) button.append(el('small', 'new-source', '새로 감지됨'));
+  if (SOURCE_SETTINGS.source_meta?.[key]?.kind === 'local') button.append(el('small', 'new-source', '로컬 실행'));
+  else if (isNewSource(key)) button.append(el('small', 'new-source', '새로 감지됨'));
   return button;
 }
 function refreshToolButtons() {
@@ -1071,6 +1076,12 @@ function settingsView() {
   form.elements.topmost.checked = widget.topmost !== false;
   form.elements.taskbar.checked = widget.taskbar !== false;
   form.elements.auto_update.checked = SOURCE_SETTINGS.auto_update !== false;
+  const ollama = SOURCE_SETTINGS.ollama;
+  form.elements.ollama_enabled.disabled = !ollama;
+  form.elements.ollama_enabled.checked = !!ollama?.enabled;
+  if (ollama?.url) $('ollamaUrl').textContent = ollama.url;
+  $('ollamaStatus').textContent = !ollama ? '상태 확인 불가' :
+    '상태: ' + (!ollama.enabled ? '꺼짐' : ollama.listening ? '켜짐' : '포트 사용 중');
 }
 function openSettings() { st.view = 'settings'; writeHash(); render(); loadSettings(); scrollTo(0,0); }
 $('settingsBtn').onclick = openSettings;
@@ -1078,6 +1089,7 @@ $('settingsBack').onclick = () => { st.view='main'; writeHash(); render(); scrol
 $('settingsForm').onsubmit = async event => {
   event.preventDefault(); const form=event.currentTarget;
   const body={subscription_plans:{},widget:{},auto_update:form.elements.auto_update.checked};
+  if (!form.elements.ollama_enabled.disabled) body.ollama={enabled:form.elements.ollama_enabled.checked};
   for (const select of form.querySelectorAll('.subscription-plan')) body.subscription_plans[select.name]=select.value;
   const accountSelects=form.querySelectorAll('.account-plan');
   if (accountSelects.length) {
@@ -1104,7 +1116,8 @@ async function loadSettings() {
     for (const [key, name] of Object.entries(sourceNames())) {
       const label = el('label'); const input = el('input'); input.type = 'checkbox'; input.name = key;
       input.checked = SOURCE_SETTINGS.sources?.[key] !== false; label.append(input, ' ' + name);
-      if (isNewSource(key)) label.append(' ', el('small', 'new-source', '새로 감지됨'));
+      if (SOURCE_SETTINGS.source_meta?.[key]?.kind === 'local') label.append(' ', el('small', 'new-source', '로컬 실행'));
+      else if (isNewSource(key)) label.append(' ', el('small', 'new-source', '새로 감지됨'));
       form.append(label);
     }
     refreshToolButtons(); sourceBanners(); settingsView();

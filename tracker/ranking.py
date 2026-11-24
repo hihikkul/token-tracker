@@ -199,7 +199,7 @@ def _codex_spend(db, since_ts, cfg):
 def _spend(db, since_ts, until_ts=None, cfg=None):
     """{src: API-equivalent USD} for records at or after since_ts."""
     out = {s: 0.0 for s in SOURCES}
-    selected = set(enabled(cfg))
+    selected = set(enabled(cfg)) - sources.LOCAL.keys()
     rows = db.query(f"SELECT source, model, {pricing.PEAK_SQL} AS peak, SUM(input) input, SUM(output) output, "
                     "SUM(cache_write) cache_write, SUM(cache_read) cache_read FROM records "
                     "WHERE ts >= ? AND ts <= ? GROUP BY source, model, peak",

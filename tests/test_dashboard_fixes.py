@@ -179,16 +179,22 @@ run('LIMITS={}; limitsView()'); assert.equal(get('limits').hidden,true);
 
     def test_settings_have_subscription_plans_only_for_builtins(self):
         self.node(r'''
-// Install the fixed widget controls from the surrounding HTML form.
-for (const name of ['font','number_font','opacity','topmost','taskbar','auto_update']) {
+// Install the fixed controls from the surrounding HTML form.
+for (const name of ['font','number_font','opacity','topmost','taskbar','auto_update','ollama_enabled']) {
   const input = new Node('input'); input.name = name; get('settingsForm').append(input);
 }
 get('settingsForm').append(get('subscriptionPlans'),get('codexAccountPlans'));
-run(`SOURCE_SETTINGS={source_names:{claude:'Claude Code',deepseek:'DeepSeek',acme:'Acme'},
-source_meta:{deepseek:{kind:'payg'},acme:{kind:'subscription'}},
-plan_options:{claude:{pro:['Pro',20]},deepseek:{fake:['Fake',1]},acme:{fake:['Fake',1]}}}; settingsView()`);
+run(`SOURCE_SETTINGS={source_names:{claude:'Claude Code',deepseek:'DeepSeek',acme:'Acme',ollama:'Ollama'},
+source_meta:{deepseek:{kind:'payg'},acme:{kind:'subscription'},ollama:{kind:'local'}},
+ollama:{enabled:true,listening:false,url:'http://127.0.0.1:11436'},
+plan_options:{claude:{pro:['Pro',20]},deepseek:{fake:['Fake',1]},acme:{fake:['Fake',1]}}}; settingsView(); refreshToolButtons()`);
 assert.deepEqual(get('subscriptionPlans').querySelectorAll('select').map(node => node.name),['claude']);
+assert(get('settingsForm').elements.ollama_enabled.checked);
+assert.equal(get('ollamaUrl').textContent,'http://127.0.0.1:11436');
+assert.equal(get('ollamaStatus').textContent,'상태: 포트 사용 중');
+assert(get('tool').textContent.includes('Ollama로컬 실행'));
 run('SOURCE_SETTINGS={}; settingsView()'); assert.equal(get('subscriptionPlans').children.length,0);
+assert(get('settingsForm').elements.ollama_enabled.disabled);
 ''')
 
     def test_mix_uses_peak_rates_and_legacy_price_fallback(self):

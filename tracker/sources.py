@@ -12,7 +12,9 @@ BUILTIN = {
     'claude': 'Claude Code', 'codex': 'Codex', 'chatgpt': 'ChatGPT',
     'gemini': 'Gemini CLI', 'antigravity': 'Antigravity', 'gemini_web': 'Gemini Web',
 }
-NAMES = dict(BUILTIN)  # grows in place as providers are detected
+LOCAL = {'ollama': 'Ollama'}
+_FIXED = {**BUILTIN, **LOCAL}
+NAMES = dict(_FIXED)  # grows in place as providers are detected
 OTHER = 'other'  # a model whose provider cannot be told from its name
 
 # Known providers, matched against the lowercased model name in this order. Anything else is
@@ -49,6 +51,8 @@ def vendor_source(model):
     """Source key for a model that no built-in app accounts for: a known provider, else the
     organisation or first word of its name ('acme/coder-2' -> 'acme'), else 'other'."""
     m = (model or '').strip().lower()
+    if m.startswith('ollama/'):
+        return 'ollama'
     if not m:
         return OTHER
     for key, pat in _VENDOR_RE:
@@ -60,20 +64,19 @@ def vendor_source(model):
     key = re.sub(r'[^a-z0-9]+', '_', word).strip('_')[:24]
     if len(key) < 3 or key in _GENERIC:
         return OTHER
-    return key + '_api' if key in BUILTIN else key
+    return key + '_api' if key in _FIXED else key
 
 
 def display_name(key):
-    if key in BUILTIN:
-        return BUILTIN[key]
+    if key in _FIXED:
+        return _FIXED[key]
     if key == OTHER:
         return 'Other models'
     return _VENDOR_NAMES.get(key) or key.replace('_', ' ').title()
 
 
 def is_subscription(key):
-    """Built-in apps run on a subscription plan; detected providers are paid per token (or free
-    when run locally). Their API-equivalent cost is an estimate, not a bill."""
+    """Built-in subscription apps, excluding local products and detected API providers."""
     return key in BUILTIN
 
 
@@ -88,8 +91,9 @@ def meta():
         out = {}
         for key, name in NAMES.items():
             d = _detected.get(key) or {}
-            out[key] = {'name': name, 'kind': 'subscription' if key in BUILTIN else 'payg',
-                        'detected': key not in BUILTIN, 'first_seen': d.get('first_seen'),
+            kind = 'local' if key in LOCAL else 'subscription' if key in BUILTIN else 'payg'
+            out[key] = {'name': name, 'kind': kind,
+                        'detected': key not in _FIXED, 'first_seen': d.get('first_seen'),
                         'models': list(d.get('models') or [])}
         return out
 
@@ -104,16 +108,16 @@ def load(db):
     saved = db.get_kv('detected_sources') or {}
     with _lock:
         for key, info in saved.items():
-            if key not in BUILTIN and isinstance(info, dict):
+            if key not in _FIXED and isinstance(info, dict):
                 _register(key, info)
 
 
 def refresh(db):
     """Register providers that now appear in the records. Returns the keys seen for the first time."""
     load(db)
-    placeholders = ','.join('?' * len(BUILTIN))
+    placeholders = ','.join('?' * len(_FIXED))
     rows = db.query(f"SELECT source, MIN(ts) AS first_seen, GROUP_CONCAT(DISTINCT model) AS models "
-                    f"FROM records WHERE source NOT IN ({placeholders}) GROUP BY source", tuple(BUILTIN))
+                    f"FROM records WHERE source NOT IN ({placeholders}) GROUP BY source", tuple(_FIXED))
     new, changed = [], False
     with _lock:
         for r in rows:

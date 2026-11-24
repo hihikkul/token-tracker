@@ -3,7 +3,7 @@ import threading
 import time
 import traceback
 
-from . import paths, pricing, sources, stats
+from . import ollama, paths, pricing, sources, stats
 from .collectors import scan_all
 from .db import DB
 from .limits import all_limits
@@ -60,11 +60,19 @@ class Engine:
     def poke(self):
         self._wake.set()
 
+    def configure_ollama(self, cfg):
+        with paths.config_lock():
+            if not self._stop.is_set():
+                ollama.start(self, cfg)
+
     def start(self):
+        self.configure_ollama(self.cfg)
         threading.Thread(target=self._loop, daemon=True, name="tracker-loop").start()
 
     def stop(self):
-        self._stop.set()
+        with paths.config_lock():
+            self._stop.set()
+            ollama.stop()
         self._wake.set()
 
     def _loop(self):

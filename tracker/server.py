@@ -5,7 +5,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import export, paths, pricing, ranking, sources, stats, updater
+from . import export, ollama, paths, pricing, ranking, sources, stats, updater
 from .sources import enabled
 from .limits import all_limits
 from .db import DB
@@ -90,7 +90,7 @@ def make_handler(engine):
                 return self._send(200, {'sources': {k: k in selected for k in names},
                     'source_names': names, 'source_meta': sources.meta(), 'version': updater.local_version(),
                     'widget': {k: cfg.get('widget', {}).get(k) for k in ('font','number_font','opacity','topmost','taskbar')},
-                    'auto_update': cfg.get('auto_update', True),
+                    'auto_update': cfg.get('auto_update', True), 'ollama': ollama.status(cfg),
                     'subscription_usd_month': cfg.get('subscription_usd_month', {}),
                     'subscription_plans': cfg.get('subscription_plans', {}),
                     'plan_options': ranking.PLAN_OPTIONS,
@@ -258,8 +258,13 @@ def make_handler(engine):
                         wc['opacity'] = opacity
                     if isinstance(b.get('auto_update'), bool):
                         cfg['auto_update'] = b['auto_update']
+                    relay = b.get('ollama')
+                    if isinstance(relay, dict):
+                        cfg['ollama'] = ollama.config(relay, cfg.get('ollama'))
                     if not paths.save_config(cfg):
                         return self._send(500, {'error': '설정을 저장하지 못했습니다. 디스크 공간과 쓰기 권한을 확인하세요.'})
+                    if isinstance(relay, dict):
+                        engine.configure_ollama(cfg)
                 engine.poke()
                 ranking._last_sync['t'] = 0
                 return self._send(200, {"ok": True})
