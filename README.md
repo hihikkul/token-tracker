@@ -67,15 +67,70 @@ Mac 앱은 스스로 덮어쓸 수 없어서, 새 버전이 나오면 위젯 우
 
 ## Ollama 사용량 기록
 
-1. Ollama를 실행한 뒤 대시보드 **설정 → Ollama → 사용량 기록**을 켜고 **설정 저장**을 눌러요.
-2. 같은 PC에서 실행 중인 클라이언트의 Ollama 주소를 `http://127.0.0.1:11435`(설정 화면에 표시된 주소)로 바꿔요.
-   - **Open WebUI**: Ollama 연결 URL을 바꿔요. **Continue**: Ollama 모델의 `apiBase`를 바꿔요.
-   - **Claude Code**: `ANTHROPIC_BASE_URL=http://127.0.0.1:11435`를 설정하고 Ollama 모델을 지정해 실행해요.
-   - **스크립트**: 네이티브 API에는 위 주소를, OpenAI SDK의 `base_url`에는 뒤에 `/v1`을 붙인 주소를 써요.
+Ollama는 토큰 사용량을 로그로 남기지 않아요. 그래서 트래커가 Ollama 앞에 **중계 주소**(`http://127.0.0.1:11435`)를 열고, 이 주소로 들어온 요청을 그대로 Ollama(`11434`)에 넘기면서 응답에 담긴 토큰 수를 기록해요. 모델 답변은 바뀌지 않아요.
 
-> 중계는 이 PC에서만 접속할 수 있어요. 기본 Ollama 포트 `11434`로 바로 보낸 요청은 중계에 기록되지 않아요. Ollama 사용량의 비용은 $0이며 랭킹에 포함되지 않아요.
+```
+앱 ──▶ 127.0.0.1:11435 (트래커, 토큰 기록) ──▶ 127.0.0.1:11434 (Ollama)
+```
 
-Ollama 서버가 다른 주소에서 실행 중이면 트래커를 시작할 때 `OLLAMA_HOST`를 설정하거나, `config.json`의 `ollama.upstream`(예: `http://127.0.0.1:11434`)을 지정하세요. 중계 포트가 사용 중이면 `ollama.port`를 바꾸고 트래커를 다시 실행하세요.
+### 1. 트래커에서 켜기
+
+대시보드 **설정 → Ollama → 사용량 기록**을 체크하고 **설정 저장**을 눌러요. 상태가 **켜짐**이 되면 준비 끝이에요. 기본으로는 꺼져 있어요.
+
+### 2. 앱의 Ollama 주소 바꾸기
+
+Ollama를 쓰는 앱에서 주소의 포트만 `11434` → `11435`로 바꾸면 돼요.
+
+| 앱 | 바꾸는 곳 | 넣을 값 |
+|---|---|---|
+| Open WebUI | 관리자 설정 → 연결 → Ollama API | `http://127.0.0.1:11435` |
+| Continue (VS Code) | `config.yaml`의 Ollama 모델 항목에 `apiBase` 추가 | `http://127.0.0.1:11435` |
+| Ollama 명령어 (`ollama run`) | 실행하는 창에서만 `OLLAMA_HOST` 지정 | 아래 예시 참고 |
+| Python `ollama` 패키지 | `Client(host=...)` | `http://127.0.0.1:11435` |
+| OpenAI SDK·호환 앱 | `base_url` (끝에 `/v1`) | `http://127.0.0.1:11435/v1` |
+| Claude Code | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:11435` |
+
+예시:
+
+```powershell
+# Ollama 명령어 (PowerShell, 이 창에서만 적용)
+$env:OLLAMA_HOST = "127.0.0.1:11435"; ollama run qwen2.5:3b
+```
+
+```bash
+# Ollama 명령어 (macOS 터미널, 이 줄에만 적용)
+OLLAMA_HOST=127.0.0.1:11435 ollama run qwen2.5:3b
+```
+
+```python
+# Python
+from ollama import Client
+client = Client(host="http://127.0.0.1:11435")
+
+from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:11435/v1", api_key="ollama")
+```
+
+```powershell
+# Claude Code로 Ollama 모델 쓰기 (PowerShell)
+$env:ANTHROPIC_BASE_URL = "http://127.0.0.1:11435"; $env:ANTHROPIC_AUTH_TOKEN = "ollama"; claude --model qwen2.5-coder:3b
+```
+
+> `OLLAMA_HOST`는 시스템 환경 변수로 영구 설정하지 마세요. Ollama 서버도 이 값을 읽어서 `11435`에서 뜨려고 하다가 트래커와 부딪혀요. 위 예시처럼 실행하는 창에서만 지정하세요.
+
+### 3. 기록 확인
+
+요청을 한 번 보낸 뒤 대시보드를 보면 **Ollama** 항목에 `ollama/모델이름`으로 토큰이 쌓여요. 로컬 실행이라 비용은 **$0**으로 표시하고, 랭킹에는 넣지 않아요.
+
+### 기록되지 않는 경우
+
+- `11434`로 바로 보낸 요청. Ollama 데스크톱 앱 자체의 대화창도 `11434`를 직접 써서 기록되지 않아요.
+- 다른 PC나 Docker 컨테이너에서 보낸 요청. 중계는 보안을 위해 이 PC의 `127.0.0.1`·`localhost` 주소로 온 요청만 받아요. 그래서 Docker의 Open WebUI처럼 `host.docker.internal`로 접속하는 앱은 연결이 거부돼요.
+- 트래커가 꺼져 있을 때. 이때 `11435`로 보낸 요청은 실패하니, 트래커를 켜거나 앱 주소를 `11434`로 되돌리세요.
+
+### 고급 설정
+
+Ollama 서버가 다른 주소에서 실행 중이면 트래커를 시작할 때 `OLLAMA_HOST`를 설정하거나, `config.json`의 `ollama.upstream`(예: `http://127.0.0.1:11434`)을 지정하세요. `11435` 포트를 다른 프로그램이 쓰고 있으면 `config.json`의 `ollama.port`를 바꾸고 트래커를 다시 실행하세요.
 
 ## 쌀먹 비율
 
@@ -86,7 +141,7 @@ Ollama 서버가 다른 주소에서 실행 중이면 트래커를 시작할 때
 - 이번 달은 달력상 이번 달 사용량 ÷ **월 구독료 전액**으로 계산해요. 오늘은 월 구독료의 1/30, 이번 주는 7/30을 사용해요. 최근 30일 차트와 별개예요.
 - Gemini CLI와 Antigravity를 함께 선택해도 Gemini 구독료는 한 번만 계산해요. ChatGPT와 Codex도 웹 항목 때문에 구독료가 추가되지 않아요.
 - 이전 계산 방식으로 보낸 랭킹 점수는 새 점수와 섞지 않고 업데이트 필요로 표시해요.
-- DeepSeek처럼 API 키로 쓰는 종량제 AI는 구독이 아니라서 배율에 넣지 않아요. 카드 아래에 **종량제 API(실제 지출)** 로 따로 보여 주고, 랭킹에도 보내지 않아요.
+- DeepSeek처럼 API 키로 쓰는 종량제 AI는 구독이 아니라서 배율에 넣지 않아요. 카드 아래에 **종량제 API(API 정가 환산액, 청구액 아님)** 로 따로 보여 주고, 랭킹에도 보내지 않아요.
 - 여러 Codex 계정은 계정별 사용량·구독료·배율을 각각 표시합니다. 설정에서 계정별 요금제를 선택할 수 있으며, 같은 요금제의 서로 다른 계정도 합치지 않습니다. 계정 ID가 없는 로그나 확인된 세션 중 계정 전환 기록은 **계정 미확인**으로 표시하고 합계 배율에서 제외합니다. 전체 사용량 차트에는 그대로 포함합니다.
 
 ## 쌀숭이 랭킹
